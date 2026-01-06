@@ -1,4 +1,4 @@
-#
+##
 # TITLE: solving the van Roosbroeck system numerically
 # AUTHOR: Hyunseung Yoo
 # PURPOSE: 
@@ -7,8 +7,10 @@
 #
 
 
+import copy as cp
 import sympy as sp
 import numpy as np
+import scipy as sc
 import matplotlib.pyplot as plt
 
 
@@ -1048,7 +1050,304 @@ class VRS:
         vrs_p_EQ = sp.Eq(vrs_p_LHS, vrs_p_RHS)
         print('p drift diffusion:', vrs_p_EQ)
         print('')
+
+
+#=============================================================
+# CLASS: Scharfetter-Gummel Finite Difference Scheme (1969)
+#=============================================================
+
+class SGFDM:
+
+    # fundamental constants
+    k_b = 1.38064852e-23        # Boltzmann constant: [m]^2 [Kg] / [K] / [s]^2
+    q = 1.602e-19               # elementary charge: [C]
+    ep0 = 8.854127817e-12       # electric permittivity of free space: [s]^4 [A]^2 / [m]^3 / [Kg]
+    
+    # silicon material parameters
+    mu_n = 0.14                 # electron mobility: [m]^2 / [V] / [s]
+    mu_p = 0.045                # hole mobility: [m]^2 / [V] / [s]
+    n_i = 1.5e16                # intrinsic concentration: 1 / [m]^3
+    tau_n = 1e-6                # electron lift time: [s]
+    tau_p = 1e-6                # hole lift time: [s]
+    
+    
+    # === constructor ===
+    def __init__(self):
+        # solution array
+        self.sol_V = []
+        self.sol_n = []
+        self.sol_p = []
+        self.sol_Jn = []
+        self.sol_Jp = []
+
+
+    # === set temperature ===
+    def set_temperature(self, temp, debugging=False):
+        # temperature: [K]
+        self.temp = temp
+        # thermal voltage: [V]
+        self.V_t = self.temp * self.k_b / self.q
+        # debugging
+        if debugging:
+            output_string = 'set_temperature(): temp = %i [K], V_t = %.4f [V]' % (self.temp, self.V_t)
+            print(output_string)
+
+    # === set dielectric constant ===
+    def set_dielectric_constant(self, k, debugging=False):
+        # dielectric constant
+        self.k = k
+        # electric permittivity: [s]^4 [A]^2 / [m]^3 / [Kg]
+        self.ep = self.ep0 * self.k
+        # debugging
+        if debugging:
+            output_string = 'set_dielectric_constant(): k = %.2f , ep = %.4e [s]^4[A]^2/[m]^3/[Kg]' % (self.k, self.ep)
+            print(output_string)
+
+    # === set donor concentration w/ charge polarity ===
+    def set_donor_concentration(self, n_D, debugging=False):
+        # donor concentration: 1 / [m]^3  w/ charge polarity
+        self.n_D = n_D
+        # debugging
+        if debugging:
+            output_string = 'set_donor_concentration(): n_D = %.2e 1/[m]^3' % (self.n_D)
+            print(output_string)
+
+    # === set acceptor concentration w/ charge polarity ===
+    def set_acceptor_concentration(self, n_A, debugging=False):
+        # acceptor concentration: 1 / [m]^3  w/ charge polarity
+        self.n_A = n_A
+        # debugging
+        if debugging:
+            output_string = 'set_acceptor_concentration(): n_A = %.2e 1/[m]^3' % (self.n_A)
+            print(output_string)
+            
+
+    # === set space finite difference ===
+    def set_space_finite_difference(self, length_x, div_x, debugging=False):
+        # length: [m]
+        self.s_fd_x_L = length_x
+        # division
+        self.s_fd_x_div = div_x
+        # finite difference
+        self.s_fd_dx = self.s_fd_x_L / self.s_fd_x_div
+        self.s_fd_x = np.linspace(0.0, self.s_fd_x_L, self.s_fd_x_div+1)
+        self.s_fd_x_len = len(self.s_fd_x)
+        # debugging
+        if debugging:
+            output_string = 'set_space_finite_difference(): s_fd_x_L = %.2e [m], s_fd_x_div = %i [ea]' % (self.s_fd_x_L, self.s_fd_x_div)
+            print(output_string)
+            output_string = 'set_space_finite_difference(): s_fd_dx = %.2e [m], len(s_fd_x) = %i [ea]' % (self.s_fd_dx, self.s_fd_x_len)
+            print(output_string)
+
+    # === set time finite difference ===
+    def set_time_finite_difference(self, length_t, div_t, debugging=False):
+        # length: [s]
+        self.t_fd_T = length_t
+        # division
+        self.t_fd_div = div_t
+        # finite difference
+        self.t_fd_dt = self.t_fd_T / self.t_fd_div
+        self.t_fd_t = np.linspace(0.0, self.t_fd_T, self.t_fd_div+1)
+        # debugging
+        if debugging:
+            output_string = 'set_time_finite_difference(): t_fd_T = %.2e [s], t_fd_div = %i [ea]' % (self.t_fd_T, self.t_fd_div)
+            print(output_string)
+            output_string = 'set_time_finite_difference(): t_fd_dt = %.2e [s], len(t_fd_t) = %i [ea]' % (self.t_fd_dt, len(self.t_fd_t))
+            print(output_string)
         
+
+    # === set doping finite difference ===
+    def set_doping_finite_difference(self, doping_profile, debugging=False):
+        # finite difference
+        self.c_fd_x = cp.copy(self.s_fd_x)
+        self.c_fd_x_en = len(self.c_fd_x)
+        # check doping profile
+        doping_ratio = 0.0
+        for doping_type in doping_profile.keys():
+            # doping charge density w/ polarity
+            doping_charge_density_polarity = doping_profile[doping_type]['doping']
+            # changing finite difference array
+            if doping_ratio == 0:
+                # calculating index
+                start_index = int(self.s_fd_x_len*doping_ratio)
+                doping_ratio += doping_profile[doping_type]['ratio']
+                end_index = int(self.s_fd_x_len*doping_ratio)
+                # doping charge density
+                self.c_fd_x[start_index:end_index] = doping_charge_density_polarity
+            elif doping_ratio > 1.0:
+                # calculating index
+                start_index = int(self.s_fd_x_len*doping_ratio)
+                end_index = self.s_fd_x_len
+                # doping charge density
+                self.c_fd_x[start_index:end_index] = doping_charge_density_polarity
+                # warning
+                print('set_doping_finite_difference(): wanring -> invalid doping ratio')
+            else:
+                # calculating index
+                start_index = int(self.s_fd_x_len*doping_ratio)
+                doping_ratio += doping_profile[doping_type]['ratio']
+                end_index = int(self.s_fd_x_len*doping_ratio)
+                # doping charge density
+                self.c_fd_x[start_index:end_index] = doping_charge_density_polarity
+        # debugging
+        if debugging:
+            output_string = 'set_doping_finite_difference(): len(c_fd_x) = %i [ea]' % (self.c_fd_x_en)
+            print(output_string)
+
+
+    # === update poisson matrix ===
+    def update_poisson_matrix(self, debugging=False):
+        # Poisson Matrix (PM)
+        self.PM_diagonal = [-1.0*np.ones(self.s_fd_x_len), 2.0*np.ones(self.s_fd_x_len), -1.0*np.ones(self.s_fd_x_len)]
+        self.PM_offset = [-1, 0, +1]
+        self.PM = sc.sparse.spdiags(self.PM_diagonal, self.PM_offset, format='csc')
+        # debugging
+        if debugging:
+            output_string = 'update_poisson_matrix(): PM shape = ' + str(self.PM.toarray().shape)
+            print(output_string)
+
+
+    # === calculating finite difference constants ===
+    def cal_finite_difference_constants(self, debugging=False):
+        # n, p equations (SI MKS)
+        self.n_con = self.mu_n * self.V_t * self.t_fd_dt / self.s_fd_dx**2
+        self.p_con = self.mu_p * self.V_t * self.t_fd_dt / self.s_fd_dx**2
+        # Jn, Jp equations (SI MKS)
+        self.Jn_con = self.q * self.mu_n * self.V_t / self.s_fd_dx
+        self.Jp_con = self.q * self.mu_p * self.V_t / self.s_fd_dx
+        # poisson equation (SI MKS)
+        self.V_con = self.q * self.s_fd_dx**2 / self.ep
+        # debugging
+        if debugging:
+            output_string = 'cal_finite_difference_constants(): n, p con = (%.2e, %.2e), Jn, Jp con = (%.2e, %.2e), V_con = %.2e' % \
+                            (self.n_con, self.p_con, self.Jn_con, self.Jp_con, self.V_con)
+            print(output_string)
+
+
+    # === set initial conditions for n, p, V ===
+    def set_initial_conditions_n_p_V(self, debugging=False):
+        # Ohmic contact for n (electrons)
+        self.n_bc_left  = 0.5 * ( +self.c_fd_x[0]  + np.sqrt( (self.c_fd_x[0]**2  + 4.0*self.n_i**2) ) )
+        self.n_bc_right = 0.5 * ( +self.c_fd_x[-1] + np.sqrt( (self.c_fd_x[-1]**2 + 4.0*self.n_i**2) ) )
+        # Ohmic contact for p (holes)
+        self.p_bc_left  = 0.5 * ( -self.c_fd_x[0]  + np.sqrt( (self.c_fd_x[0]**2  + 4.0*self.n_i**2) ) )
+        self.p_bc_right = 0.5 * ( -self.c_fd_x[-1] + np.sqrt( (self.c_fd_x[-1]**2 + 4.0*self.n_i**2) ) )
+        # initial electric potential V = 0 
+        self.V = np.zeros(self.s_fd_x_len)
+        # initial n (electrons) density using doping profile (w/o depletion)
+        self.n = 0.5 * ( +self.c_fd_x  + np.sqrt( (self.c_fd_x**2  + 4.0*self.n_i**2) ) )
+        # initial p (holes) density using doping profile (w/o depletion)
+        self.p = 0.5 * ( -self.c_fd_x  + np.sqrt( (self.c_fd_x**2  + 4.0*self.n_i**2) ) )
+        # debugging
+        if debugging:
+            output_string = 'set_initial_conditions_n_p_V(): left (n,p) = (%.1e,%.1e), right (n,p) = (%.1e,%.1e)' % \
+                            (self.n_bc_left, self.p_bc_left, self.n_bc_right, self.p_bc_right)
+            print(output_string)
+
+
+    # === bernoulli function ===
+    def bernoulli_func(self, dV):
+        #
+        tolerance = 1.0e-10
+        #
+        result = np.where( dV > tolerance, dV/(np.exp(dV)-1.0), 1.0)
+        #
+        return result
+
+    
+    # === scharfetter gummel loop ===
+    def scharfetter_gummel_loop(self, ext_bias, debugging=False):
+        
+        # calculating built-in potential @Ohmic contact [V]
+        V_bi_left  = self.V_t * np.log( (self.c_fd_x[0]  + np.sqrt( self.c_fd_x[0]**2  + 4*self.n_i**2 ) ) / (2*self.n_i) )
+        V_bi_right = self.V_t * np.log( (self.c_fd_x[-1] + np.sqrt( self.c_fd_x[-1]**2 + 4*self.n_i**2 ) ) / (2*self.n_i) ) + ext_bias
+        # calculating V2 [V]
+        self.V2 = np.array( [V_bi_left] + list(self.V) + [V_bi_right], dtype=float )
+        # calculating dV [V / Vthermal]
+        self.dV = np.diff(self.V2) / self.V_t
+
+        # boundary conditions: step 1
+        n_bc = np.zeros(self.s_fd_x_len, dtype=float)
+        p_bc = np.zeros(self.s_fd_x_len, dtype=float)
+        V_bc = np.zeros(self.s_fd_x_len, dtype=float)
+        # boundary conditions: step 2
+        n_bc[0]  = -self.n_con * self.bernoulli_func( -self.dV[0]  ) * self.n_bc_left
+        n_bc[-1] = -self.n_con * self.bernoulli_func( +self.dV[-1] ) * self.n_bc_right
+        p_bc[0]  = -self.p_con * self.bernoulli_func( +self.dV[0]  ) * self.p_bc_left
+        p_bc[-1] = -self.p_con * self.bernoulli_func( -self.dV[-1] ) * self.p_bc_right
+        V_bc[0]  =  V_bi_left
+        V_bc[-1] =  V_bi_right
+
+        # N, P matrix: step 1
+        N = np.zeros([self.s_fd_x_len, self.s_fd_x_len], dtype=float)
+        P = np.zeros([self.s_fd_x_len, self.s_fd_x_len], dtype=float)
+        # N, P matrix: step 2
+        for row_cnt in range(self.s_fd_x_len):
+            # first row
+            if row_cnt == 0:
+                #
+                N[row_cnt, row_cnt+0] = +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] )
+                N[row_cnt, row_cnt+1] = -self.bernoulli_func( +self.dV[row_cnt+1] )
+                #
+                P[row_cnt, row_cnt+0] = +self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] )
+                P[row_cnt, row_cnt+1] = -self.bernoulli_func( -self.dV[row_cnt+1] )
+            # last row
+            elif row_cnt == (self.s_fd_x_len-1):
+                #
+                N[row_cnt, row_cnt-1] = -self.bernoulli_func( -self.dV[row_cnt+0] )
+                N[row_cnt, row_cnt+0] = +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] )
+                #
+                P[row_cnt, row_cnt-1] = -self.bernoulli_func( +self.dV[row_cnt+0] )
+                P[row_cnt, row_cnt+0] = +self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] )
+            # other rows
+            else:
+                #
+                N[row_cnt, row_cnt-1] = -self.bernoulli_func( -self.dV[row_cnt+0] )
+                N[row_cnt, row_cnt+0] = +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] )
+                N[row_cnt, row_cnt+1] = -self.bernoulli_func( +self.dV[row_cnt+1] )
+                #
+                P[row_cnt, row_cnt-1] = -self.bernoulli_func( +self.dV[row_cnt+0] )
+                P[row_cnt, row_cnt+0] = +self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] )
+                P[row_cnt, row_cnt+1] = -self.bernoulli_func( -self.dV[row_cnt+1] )
+        # N, P matrix: step 3
+        N = self.n_con * N
+        P = self.n_con * P
+
+        # updating n, p
+        self.n_p1 = np.linalg.solve(N, self.n - n_bc)
+        self.p_p1 = np.linalg.solve(P, self.p - p_bc)
+
+        # updating V
+        self.V_p1 = sc.sparse.linalg.spsolve(self.PM, self.V_con * (self.p_p1 - self.n_p1 + self.c_fd_x) + V_bc)
+
+        # updating dV [V / Vthermal]
+        self.V2_p1 = np.array( [V_bi_left] + list(self.V_p1) + [V_bi_right], dtype=float )
+        self.dV_p1 = np.diff(self.V2_p1) / self.V_t
+        
+                
+        # debugging
+        if debugging:
+            output_string = 'V_bi (left, right) = (%.2f, %.2f)' % (V_bi_left, V_bi_right)
+            print(output_string)
+            # visualization
+            fig, ax = plt.subplots(2,2,figsize=(8,8))
+            ax[0,0].semilogy(self.n, 'o-')
+            ax[0,0].semilogy(self.n_p1, 'o-')
+            ax[0,0].grid(ls=':')
+            ax[0,0].set_title('electron density 1/[m]^3')
+            ax[0,1].semilogy(self.p, 'o-')
+            ax[0,1].semilogy(self.p_p1, 'o-')
+            ax[0,1].grid(ls=':')
+            ax[0,1].set_title('hole density 1/[m]^3')
+            ax[1,0].plot(self.V, 'o-')
+            ax[1,0].plot(self.V_p1, 'o-')
+            ax[1,0].grid(ls=':')
+            ax[1,0].set_title('electric potential [V]')
+            ax[1,1].plot(self.dV, 'o-')
+            ax[1,1].plot(self.dV_p1, 'o-')
+            ax[1,1].grid(ls=':')
+            ax[1,1].set_title('delta electric potential [V/Vt]')
+            plt.show()
         
 
 #=============================================================
@@ -1067,7 +1366,7 @@ if False:
     fdm.crank_nicholson_method()
     fdm.drift_diffusion_model_stability()
 
-if True:
+if False:
     vrs = VRS()
     vrs.van_roosbroeck_system()
     vrs.no_current_van_roosbroeck_system()
@@ -1075,6 +1374,26 @@ if True:
     vrs.constant_current_linear_potential_van_roosbroeck_system()
     vrs.gummel_iteration_damping()
     vrs.drift_diffusion_in_van_roosbroeck_system()
+
+if True:
+    sgfdm = SGFDM()
+    
+    sgfdm.set_temperature(temp=300, debugging=True)
+    sgfdm.set_dielectric_constant(k=11.86, debugging=True)
+    sgfdm.set_donor_concentration(n_D=+1e19, debugging=True)
+    sgfdm.set_acceptor_concentration(n_A=-1e18, debugging=True)
+
+    sgfdm.set_space_finite_difference(length_x=1e-5, div_x=100, debugging=True)
+    sgfdm.set_time_finite_difference(length_t=1e-8, div_t=500, debugging=True)
+
+    doping_profile = {'p':{'doping':-1e18, 'ratio':0.5}, 'n':{'doping':1e18, 'ratio':0.5}}
+    sgfdm.set_doping_finite_difference(doping_profile, debugging=True)
+
+    sgfdm.update_poisson_matrix(debugging=True)
+    sgfdm.cal_finite_difference_constants(debugging=True)
+    sgfdm.set_initial_conditions_n_p_V(debugging=True)
+
+    sgfdm.scharfetter_gummel_loop(ext_bias=0.0, debugging=True)
 
 
 
