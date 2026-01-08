@@ -1074,11 +1074,13 @@ class SGFDM:
     # === constructor ===
     def __init__(self):
         # solution array
-        self.sol_V = []
         self.sol_n = []
         self.sol_p = []
+        self.sol_V = []
+        self.sol_dV = []
         self.sol_Jn = []
         self.sol_Jp = []
+        self.sol_q = []
 
 
     # === set temperature ===
@@ -1232,13 +1234,12 @@ class SGFDM:
         # Ohmic contact for p (holes)
         self.p_bc_left  = 0.5 * ( -self.c_fd_x[0]  + np.sqrt( (self.c_fd_x[0]**2  + 4.0*self.n_i**2) ) )
         self.p_bc_right = 0.5 * ( -self.c_fd_x[-1] + np.sqrt( (self.c_fd_x[-1]**2 + 4.0*self.n_i**2) ) )
-        # initial electric potential V = 0 
-        self.V = np.zeros(self.s_fd_x_len)
+        # initial electric potential V = 0 (built-in potential)
+        self.V = self.V_t * np.log( (self.c_fd_x  + np.sqrt( self.c_fd_x**2  + 4.0*self.n_i**2 ) ) / (2*self.n_i) )
         # initial n (electrons) density using doping profile (w/o depletion)
         self.n = 0.5 * ( +self.c_fd_x  + np.sqrt( (self.c_fd_x**2  + 4.0*self.n_i**2) ) )
         # initial p (holes) density using doping profile (w/o depletion)
         self.p = 0.5 * ( -self.c_fd_x  + np.sqrt( (self.c_fd_x**2  + 4.0*self.n_i**2) ) )
-        
         # debugging
         if debugging:
             output_string = 'set_initial_conditions_n_p_V(): left (n,p) = (%.1e,%.1e), right (n,p) = (%.1e,%.1e)' % \
@@ -1249,9 +1250,9 @@ class SGFDM:
     # === bernoulli function ===
     def bernoulli_func(self, dV):
         #
-        tolerance = 1.0e-10
+        tolerance = 1.0e-8
         #
-        result = np.where( dV > tolerance, dV/(np.exp(dV)-1.0), 1.0)
+        result = np.where( np.abs(dV)>tolerance, dV/(np.exp(dV)-1.0), 1.0)
         #
         return result
 
@@ -1259,126 +1260,162 @@ class SGFDM:
     # === scharfetter gummel loop ===
     def scharfetter_gummel_loop(self, ext_bias, debugging=False):
         
-        # calculating built-in potential @Ohmic contact [V]
+        # === calculating
+        #     built-in potential @Ohmic contact [V]
         V_bi_left  = self.V_t * np.log( (self.c_fd_x[0]  + np.sqrt( self.c_fd_x[0]**2  + 4*self.n_i**2 ) ) / (2*self.n_i) )
         V_bi_right = self.V_t * np.log( (self.c_fd_x[-1] + np.sqrt( self.c_fd_x[-1]**2 + 4*self.n_i**2 ) ) / (2*self.n_i) ) + ext_bias
-        # calculating V2 [V]
+        # === calculating
+        #     V2 [V] ~ including ohmic contact
+        #     dV [V / Vthermal] ~ used in calculating Bernoulli function
         self.V2 = np.array( [V_bi_left] + list(self.V) + [V_bi_right], dtype=float )
-        # calculating dV [V / Vthermal]
         self.dV = np.diff(self.V2) / self.V_t
+        # === storing n, p, V, dV
+        self.sol_n.append( cp.copy(self.n) )
+        self.sol_p.append( cp.copy(self.p) )
+        self.sol_V.append( cp.copy(self.V) )
+        self.sol_dV.append( cp.copy(self.dV) )
 
-        # boundary conditions: making vectors
+        # === making vectors
+        #     n_bc, p_bc, V_bc (boundary conditions)
         n_bc = np.zeros(self.s_fd_x_len, dtype=float)
         p_bc = np.zeros(self.s_fd_x_len, dtype=float)
         V_bc = np.zeros(self.s_fd_x_len, dtype=float)
-        # N, P matrix: making matrices
-        N = np.zeros([self.s_fd_x_len, self.s_fd_x_len], dtype=float)                   # dense matrix
-        P = np.zeros([self.s_fd_x_len, self.s_fd_x_len], dtype=float)                   # dense matrix
-        Ndok = sc.sparse.dok_matrix((self.s_fd_x_len, self.s_fd_x_len), dtype=float)    # sparse matrix (dictionary of keys)
-        Pdok = sc.sparse.dok_matrix((self.s_fd_x_len, self.s_fd_x_len), dtype=float)    # sparse matrix (dictionary of keys)
-        
+        # === making matrices ===
+        #     N, P matrix (dense matrix),
+        #     Ndok, Pdok matrix(sparse matrix, dictionary of keys)
+        N = np.zeros([self.s_fd_x_len, self.s_fd_x_len], dtype=float)
+        P = np.zeros([self.s_fd_x_len, self.s_fd_x_len], dtype=float)
+        Ndok = sc.sparse.dok_matrix((self.s_fd_x_len, self.s_fd_x_len), dtype=float)
+        Pdok = sc.sparse.dok_matrix((self.s_fd_x_len, self.s_fd_x_len), dtype=float)
+
+        # =================================
         # === scharfetter gummel scheme ===
+        # =================================
+
+        number_of_sg_scheme_loop = 501
+        number_of_sg_scheme_loop_selected = [0, 100, 200, 300, 400, 500]
+
+        for sg_scheme_loop_cnt in range(number_of_sg_scheme_loop):
+            #
+            #print('starting SG scheme loop %i' % sg_scheme_loop_cnt)
               
-        # boundary conditions: updating
-        n_bc[0]  = -self.n_con * self.bernoulli_func( -self.dV[0]  ) * self.n_bc_left
-        n_bc[-1] = -self.n_con * self.bernoulli_func( +self.dV[-1] ) * self.n_bc_right
-        p_bc[0]  = -self.p_con * self.bernoulli_func( +self.dV[0]  ) * self.p_bc_left
-        p_bc[-1] = -self.p_con * self.bernoulli_func( -self.dV[-1] ) * self.p_bc_right
-        V_bc[0]  =  V_bi_left
-        V_bc[-1] =  V_bi_right
-        # check current density
-        Jn_left = self.Jn_con * ( self.bernoulli_func( self.dV[0]) * self.n[0] - self.bernoulli_func(-self.dV[0]) * self.n_bc_left )
-        Jp_left = self.Jp_con * ( self.bernoulli_func(-self.dV[0]) * self.p[0] - self.bernoulli_func( self.dV[0]) * self.p_bc_left )
-        Jn_0 = self.Jn_con * ( self.bernoulli_func( self.dV[1]) * self.n[1] - self.bernoulli_func(-self.dV[1]) * self.n[0] )
-        Jp_0 = self.Jp_con * ( self.bernoulli_func(-self.dV[1]) * self.p[1] - self.bernoulli_func( self.dV[1]) * self.p[0] )
-        Jn_right = self.Jn_con * ( self.bernoulli_func( self.dV[-1]) * self.n_bc_right - self.bernoulli_func(-self.dV[-1]) * self.n[-1] )
-        Jp_right = self.Jp_con * ( self.bernoulli_func(-self.dV[-1]) * self.p_bc_right - self.bernoulli_func( self.dV[-1]) * self.p[-1] )
-        Jn_n = self.Jn_con * ( self.bernoulli_func( self.dV[-2]) * self.n[-1] - self.bernoulli_func(-self.dV[-2]) * self.n[-2] )
-        Jp_n = self.Jp_con * ( self.bernoulli_func(-self.dV[-2]) * self.p[-1] - self.bernoulli_func( self.dV[-2]) * self.p[-2] )
-        #print(Jn_left, Jn_0, Jn_n, Jn_right)
-        #print(Jp_left, Jp_0, Jp_n, Jp_right)
+            # updating BC vectors: n_bc, p_bc, V_bc @ohmic contact (for continuity equations, poisson equation)
+            n_bc[0]  = -self.n_con * self.bernoulli_func( -self.dV[0]  ) * self.n_bc_left
+            n_bc[-1] = -self.n_con * self.bernoulli_func( +self.dV[-1] ) * self.n_bc_right
+            p_bc[0]  = -self.p_con * self.bernoulli_func( +self.dV[0]  ) * self.p_bc_left
+            p_bc[-1] = -self.p_con * self.bernoulli_func( -self.dV[-1] ) * self.p_bc_right
+            V_bc[0]  =  V_bi_left
+            V_bc[-1] =  V_bi_right
+            # updating current density (monitoring)
+            Jn_left = self.Jn_con * ( self.bernoulli_func(+self.dV[0]) * self.n[0] - self.bernoulli_func(-self.dV[0]) * self.n_bc_left )
+            Jp_left = self.Jp_con * ( self.bernoulli_func(-self.dV[0]) * self.p[0] - self.bernoulli_func(+self.dV[0]) * self.p_bc_left )
+            Jn_mid = self.Jn_con * ( self.bernoulli_func(+self.dV[1:-1]) * self.n[1:] - self.bernoulli_func(-self.dV[1:-1]) * self.n[:-1] )
+            Jp_mid = self.Jp_con * ( self.bernoulli_func(-self.dV[1:-1]) * self.p[1:] - self.bernoulli_func(+self.dV[1:-1]) * self.p[:-1] )
+            Jn_right = self.Jn_con * ( self.bernoulli_func(+self.dV[-1]) * self.n_bc_right - self.bernoulli_func(-self.dV[-1]) * self.n[-1] )
+            Jp_right = self.Jp_con * ( self.bernoulli_func(-self.dV[-1]) * self.p_bc_right - self.bernoulli_func(+self.dV[-1]) * self.p[-1] )
+            Jn = np.array( [Jn_left] + list(Jn_mid) + [Jn_right] ,dtype=float )
+            Jp = np.array( [Jp_left] + list(Jp_mid) + [Jp_right] ,dtype=float )
+            # === storing Jn, Jp
+            self.sol_Jn.append( cp.copy(Jn) )
+            self.sol_Jp.append( cp.copy(Jp) )
 
-        # N, P matrix: updating
-        for row_cnt in range(self.s_fd_x_len):
-            # first row
-            if row_cnt == 0:
-                #
-                N[row_cnt, row_cnt+0] = +self.n_con*self.bernoulli_func( -self.dV[row_cnt+1] ) + self.n_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                N[row_cnt, row_cnt+1] = -self.n_con*self.bernoulli_func( +self.dV[row_cnt+1] )
-                Ndok[row_cnt, row_cnt+0] = +self.n_con*self.bernoulli_func( -self.dV[row_cnt+1] ) + self.n_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                Ndok[row_cnt, row_cnt+1] = -self.n_con*self.bernoulli_func( +self.dV[row_cnt+1] )
-                #
-                P[row_cnt, row_cnt+0] = +self.p_con*self.bernoulli_func( +self.dV[row_cnt+1] ) + self.p_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                P[row_cnt, row_cnt+1] = -self.p_con*self.bernoulli_func( -self.dV[row_cnt+1] )
-                Pdok[row_cnt, row_cnt+0] = +self.p_con*self.bernoulli_func( +self.dV[row_cnt+1] ) + self.p_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                Pdok[row_cnt, row_cnt+1] = -self.p_con*self.bernoulli_func( -self.dV[row_cnt+1] )
-            # last row
-            elif row_cnt == (self.s_fd_x_len-1):
-                #
-                N[row_cnt, row_cnt-1] = -self.n_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                N[row_cnt, row_cnt+0] = +self.n_con*self.bernoulli_func( -self.dV[row_cnt+1] ) + self.n_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                Ndok[row_cnt, row_cnt-1] = -self.n_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                Ndok[row_cnt, row_cnt+0] = +self.n_con*self.bernoulli_func( -self.dV[row_cnt+1] ) + self.n_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                #
-                P[row_cnt, row_cnt-1] = -self.p_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                P[row_cnt, row_cnt+0] = +self.p_con*self.bernoulli_func( +self.dV[row_cnt+1] ) + self.p_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                Pdok[row_cnt, row_cnt-1] = -self.p_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                Pdok[row_cnt, row_cnt+0] = +self.p_con*self.bernoulli_func( +self.dV[row_cnt+1] ) + self.p_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-            # other rows
-            else:
-                #
-                N[row_cnt, row_cnt-1] = -self.n_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                N[row_cnt, row_cnt+0] = +self.n_con*self.bernoulli_func( -self.dV[row_cnt+1] ) + self.n_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                N[row_cnt, row_cnt+1] = -self.n_con*self.bernoulli_func( +self.dV[row_cnt+1] )
-                Ndok[row_cnt, row_cnt-1] = -self.n_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                Ndok[row_cnt, row_cnt+0] = +self.n_con*self.bernoulli_func( -self.dV[row_cnt+1] ) + self.n_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                Ndok[row_cnt, row_cnt+1] = -self.n_con*self.bernoulli_func( +self.dV[row_cnt+1] )
-                #
-                P[row_cnt, row_cnt-1] = -self.p_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                P[row_cnt, row_cnt+0] = +self.p_con*self.bernoulli_func( +self.dV[row_cnt+1] ) + self.p_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                P[row_cnt, row_cnt+1] = -self.p_con*self.bernoulli_func( -self.dV[row_cnt+1] )
-                Pdok[row_cnt, row_cnt-1] = -self.p_con*self.bernoulli_func( +self.dV[row_cnt+0] )
-                Pdok[row_cnt, row_cnt+0] = +self.p_con*self.bernoulli_func( +self.dV[row_cnt+1] ) + self.p_con*self.bernoulli_func( -self.dV[row_cnt+0] )
-                Pdok[row_cnt, row_cnt+1] = -self.p_con*self.bernoulli_func( -self.dV[row_cnt+1] )
+            # updating N, P matrix (for continuity equations)
+            for row_cnt in range(self.s_fd_x_len):
+                # first row
+                if row_cnt == 0:
+                    #
+                    N[row_cnt, row_cnt+0] = self.n_con * ( +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] ) ) + 1.0
+                    N[row_cnt, row_cnt+1] = self.n_con * ( -self.bernoulli_func( +self.dV[row_cnt+1] ) )
+                    #Ndok[row_cnt, row_cnt+0] = self.n_con * ( +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] ) + 1.0
+                    #Ndok[row_cnt, row_cnt+1] = self.n_con * ( -self.bernoulli_func( +self.dV[row_cnt+1] ) )
+                    #
+                    P[row_cnt, row_cnt+0] = self.p_con * ( +self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] ) ) + 1.0
+                    P[row_cnt, row_cnt+1] = self.p_con * ( -self.bernoulli_func( -self.dV[row_cnt+1] ) )
+                    #Pdok[row_cnt, row_cnt+0] = self.p_con * ( +self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] ) ) + 1.0
+                    #Pdok[row_cnt, row_cnt+1] = self.p_con * ( -self.bernoulli_func( -self.dV[row_cnt+1] ) )
+                # last row
+                elif row_cnt == (self.s_fd_x_len-1):
+                    #
+                    N[row_cnt, row_cnt-1] = self.n_con * ( -self.bernoulli_func( -self.dV[row_cnt+0] ) )
+                    N[row_cnt, row_cnt+0] = self.n_con * ( +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] ) ) + 1.0
+                    #Ndok[row_cnt, row_cnt-1] = self.n_con * ( -self.bernoulli_func( -self.dV[row_cnt+0] ) )
+                    #Ndok[row_cnt, row_cnt+0] = self.n_con * ( +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] ) ) + 1.0
+                    #
+                    P[row_cnt, row_cnt-1] = self.p_con * ( -self.bernoulli_func( +self.dV[row_cnt+0] ) )
+                    P[row_cnt, row_cnt+0] = self.p_con * ( self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] ) ) + 1.0
+                    #Pdok[row_cnt, row_cnt-1] = self.p_con * ( -self.bernoulli_func( +self.dV[row_cnt+0] ) )
+                    #Pdok[row_cnt, row_cnt+0] = self.p_con * ( self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] ) ) + 1.0
+                # other rows
+                else:
+                    #
+                    N[row_cnt, row_cnt-1] = self.n_con * ( -self.bernoulli_func( -self.dV[row_cnt+0] ) )
+                    N[row_cnt, row_cnt+0] = self.n_con * ( +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] ) ) + 1.0
+                    N[row_cnt, row_cnt+1] = self.n_con * ( -self.bernoulli_func( +self.dV[row_cnt+1] ) )
+                    #Ndok[row_cnt, row_cnt-1] = self.n_con * ( -self.bernoulli_func( -self.dV[row_cnt+0] ) )
+                    #Ndok[row_cnt, row_cnt+0] = self.n_con * ( +self.bernoulli_func( -self.dV[row_cnt+1] ) + self.bernoulli_func( +self.dV[row_cnt+0] ) ) + 1.0
+                    #Ndok[row_cnt, row_cnt+1] = self.n_con * ( -self.bernoulli_func( +self.dV[row_cnt+1] ) )
+                    #
+                    P[row_cnt, row_cnt-1] = self.p_con * ( -self.bernoulli_func( +self.dV[row_cnt+0] ) )
+                    P[row_cnt, row_cnt+0] = self.p_con * ( +self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] ) ) + 1.0
+                    P[row_cnt, row_cnt+1] = self.p_con * ( -self.bernoulli_func( -self.dV[row_cnt+1] ) )
+                    #Pdok[row_cnt, row_cnt-1] = self.p_con * ( -self.bernoulli_func( +self.dV[row_cnt+0] ) )
+                    #Pdok[row_cnt, row_cnt+0] = self.p_con * ( +self.bernoulli_func( +self.dV[row_cnt+1] ) + self.bernoulli_func( -self.dV[row_cnt+0] ) ) + 1.0
+                    #Pdok[row_cnt, row_cnt+1] = self.p_con * ( -self.bernoulli_func( -self.dV[row_cnt+1] ) )
+            
+            # updating n, p
+            self.n = np.linalg.solve(N, self.n - n_bc)
+            self.p = np.linalg.solve(P, self.p - p_bc)
+            #self.n = sc.sparse.linalg.spsolve(Ndok, self.n - n_bc)
+            #self.p = sc.sparse.linalg.spsolve(Pdok, self.p - p_bc)
 
-        # updating n, p
-        #self.n_p1 = np.linalg.solve(N, self.n - n_bc)
-        #self.p_p1 = np.linalg.solve(P, self.p - p_bc)
-        self.n_p1 = sc.sparse.linalg.spsolve(Ndok, self.n - n_bc)
-        self.p_p1 = sc.sparse.linalg.spsolve(Pdok, self.p - p_bc)
+            # === storing n, p
+            self.sol_n.append( cp.copy(self.n) )
+            self.sol_p.append( cp.copy(self.p) )
+            
+            # updating V
+            #self.V = sc.sparse.linalg.spsolve(self.PM, self.V_con * (self.p - self.n + self.c_fd_x) + V_bc)
+            self.V = np.linalg.solve(self.PM.toarray(), self.V_con * (self.p - self.n + self.c_fd_x) + V_bc)
 
-        # updating V
-        self.V_p1 = sc.sparse.linalg.spsolve(self.PM, self.V_con * (self.p_p1 - self.n_p1 + self.c_fd_x) + V_bc)
+            # updating dV [V / Vthermal]
+            self.V2 = np.array( [V_bi_left] + list(self.V) + [V_bi_right], dtype=float )
+            self.dV = np.diff(self.V2) / self.V_t
 
-        # updating dV [V / Vthermal]
-        self.V2_p1 = np.array( [V_bi_left] + list(self.V_p1) + [V_bi_right], dtype=float )
-        self.dV_p1 = np.diff(self.V2_p1) / self.V_t
-        
+            # === storing V, dV, q
+            self.sol_V.append( cp.copy(self.V) )
+            self.sol_dV.append( cp.copy(self.dV) )
+            self.sol_q.append( cp.copy(self.p - self.n + self.c_fd_x) )
 
+            #
+            #print(' SG scheme loop %i completed' % sg_scheme_loop_cnt)
 
-        
         # debugging
         if debugging:
             output_string = 'V_bi (left, right) = (%.2f, %.2f)' % (V_bi_left, V_bi_right)
             print(output_string)
+            
             # visualization
-            fig, ax = plt.subplots(2,2,figsize=(8,8))
-            ax[0,0].semilogy(self.n, 'o-')
-            ax[0,0].semilogy(self.n_p1, 'o-')
+            fig, ax = plt.subplots(2, 2,figsize=(12,10))
+            
+            for cnt in number_of_sg_scheme_loop_selected:
+                ax[0,0].semilogy(self.s_fd_x, self.sol_n[cnt], 'o-')
             ax[0,0].grid(ls=':')
             ax[0,0].set_title('electron density 1/[m]^3')
-            ax[0,1].semilogy(self.p, 'o-')
-            ax[0,1].semilogy(self.p_p1, 'o-')
+            
+            for cnt in number_of_sg_scheme_loop_selected:
+                ax[0,1].semilogy(self.s_fd_x, self.sol_p[cnt], 'o-')
             ax[0,1].grid(ls=':')
             ax[0,1].set_title('hole density 1/[m]^3')
-            ax[1,0].plot(self.V, 'o-')
-            ax[1,0].plot(self.V_p1, 'o-')
+            
+            for cnt in number_of_sg_scheme_loop_selected:
+                ax[1,0].plot(self.s_fd_x, self.sol_V[cnt], 'o-')
             ax[1,0].grid(ls=':')
             ax[1,0].set_title('electric potential [V]')
-            ax[1,1].plot(self.dV, 'o-')
-            ax[1,1].plot(self.dV_p1, 'o-')
+            
+            for cnt in number_of_sg_scheme_loop_selected:
+                ax[1,1].plot(self.s_fd_x, self.sol_q[cnt], 'o-')
             ax[1,1].grid(ls=':')
-            ax[1,1].set_title('delta electric potential [V/Vt]')
+            ax[1,1].set_title('net charge density q 1/[m]^3')
+            
             plt.show()
         
 
@@ -1412,20 +1449,21 @@ if True:
     
     sgfdm.set_temperature(temp=300, debugging=True)
     sgfdm.set_dielectric_constant(k=11.86, debugging=True)
-    sgfdm.set_donor_concentration(n_D=+1e19, debugging=True)
-    sgfdm.set_acceptor_concentration(n_A=-1e18, debugging=True)
+    #sgfdm.set_donor_concentration(n_D=+1e18, debugging=True)
+    #sgfdm.set_acceptor_concentration(n_A=-1e18, debugging=True)
 
-    sgfdm.set_space_finite_difference(length_x=1e-5, div_x=100, debugging=True)
-    sgfdm.set_time_finite_difference(length_t=1e-8, div_t=500, debugging=True)
+    sgfdm.set_space_finite_difference(length_x=1e-7, div_x=200, debugging=True)         # 1e-5 / 100ea
+    sgfdm.set_time_finite_difference(length_t=1e-12, div_t=500, debugging=True)         # 1e-8 / 500ea
 
-    doping_profile = {'p':{'doping':-1e18, 'ratio':0.5}, 'n':{'doping':1e18, 'ratio':0.5}}
+    doping_profile = {'p':{'doping':-1e24, 'ratio':0.5}, 'n':{'doping':1e24, 'ratio':0.5}}
     sgfdm.set_doping_finite_difference(doping_profile, debugging=True)
 
     sgfdm.update_poisson_matrix(debugging=True)
     sgfdm.cal_finite_difference_constants(debugging=True)
     sgfdm.set_initial_conditions_n_p_V(debugging=True)
 
-    sgfdm.scharfetter_gummel_loop(ext_bias=0.0, debugging=True)
+    sgfdm.scharfetter_gummel_loop(ext_bias=0.5, debugging=True)
+
 
 
 
