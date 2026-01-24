@@ -102,7 +102,7 @@ class CH02_OHMS_LAW:
 # MAIN
 #
 
-if True:
+if False:
     voltage = 10.0                  # [V]
     resistance = 5.0                # [ohm]
     length = 2.0                    # [m]
@@ -112,5 +112,77 @@ if True:
     
     #
     ch02_ohms_law = CH02_OHMS_LAW(voltage, resistance, length, cross_section_area, R0, delta_T)
+
+
+#
+# CLASS
+#
+
+class CH03_QM_BASIC:
+
+    def __init__(self):
+        #
+        self.h = 6.62607015e-34         # Planck constant, [m]^2 [kg] / [s]
+        self.hb = self.h / (2.0*np.pi)  # hbar
+        self.me0 = 9.1093837e-31        # electron mass, [kg]
+        self.q = 1.60217663e-19         # electron charge, [C]
+
+    def well_potential(self, x):
+        # user input
+        V0 = -self.q * 5.0   # energy [eV]
+        L = 1e-9            # length [m]
+        # return
+        return np.where( (x < 0.0) | (x > L), V0, 0.0)
+
+    def solve_1d_TISE(self, potential, x_range, n):
+        #
+        self.x_range = x_range
+        self.x_min, self.x_max = x_range
+        # position
+        self.x = np.linspace(self.x_min, self.x_max, 1000)
+        self.dx = self.x[1]-self.x[0]
+        # calculating constant
+        self.tise_const = -self.hb**2/(2.0*self.me0)/(self.dx)**2
+        # calculating Hamiltonian matrix
+        self.H = sc.sparse.dok_matrix( (1000, 1000) )
+        #
+        for cnt in range(1000):
+            # diagonal, off diagonal
+            if cnt == 0:
+                self.H[cnt, -1] = -self.tise_const
+                self.H[cnt, cnt] = 2.0 * self.tise_const + potential(self.x[cnt])
+                self.H[cnt, cnt+1] = -self.tise_const
+            elif cnt == 999:
+                self.H[cnt, cnt-1] = -self.tise_const
+                self.H[cnt, cnt] = 2.0 * self.tise_const + potential(self.x[cnt])
+                self.H[cnt, 0] = -self.tise_const
+            else:
+                self.H[cnt, cnt-1] = -self.tise_const
+                self.H[cnt, cnt] = 2.0 * self.tise_const + potential(self.x[cnt])
+                self.H[cnt, cnt+1] = -self.tise_const
+        # conversion
+        self.Hcsr = self.H.tocsr()
+        # solving eigenvalue problem
+        self.eigenvalues, self.eignvectors = sc.sparse.linalg.eigsh(self.Hcsr, which='SM')
+        # eigenvalues in eV
+        print(self.eigenvalues/self.q)
+        # selected states
+        print(self.eigenvalues[n]/self.q)
+        plt.plot(self.x, potential(self.x))
+        plt.plot(self.x, self.eignvectors[:,n], '-')
+        plt.grid(ls=':')
+        plt.show()
+        
+
+#
+# MAIN
+#
+
+if True:
+    #
+    ch03_1d_tise = CH03_QM_BASIC()
+    ch03_1d_tise.solve_1d_TISE(potential=ch03_1d_tise.well_potential, x_range=(-5e-9,5e-9), n=1)
+
+
 
 
