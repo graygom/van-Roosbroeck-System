@@ -55,17 +55,17 @@ class SOLVER:
         z_st, z_ed, dz = z_range
 
         # calculations: position (elements, nodes)
-        r_elemts = int( (r_ed - r_st) / dr )
-        r_nodes = r_elemts + 1
-        z_elemts = int( (z_ed - z_st) / dz )
-        z_nodes = z_elemts + 1
+        r_elmts = int( (r_ed - r_st) / dr )
+        r_nodes = r_elmts + 1
+        z_elmts = int( (z_ed - z_st) / dz )
+        z_nodes = z_elmts + 1
 
         # debugging
         if True:
             output_string_r1 = 'r_start = %.1f, r_end = %.1f, dr = %.1f' % tuple(r_range)
-            output_string_r2 = 'r_elements = %i, r_nodes = %i' % (r_elemts, r_nodes)
+            output_string_r2 = 'r_elements = %i, r_nodes = %i' % (r_elmts, r_nodes)
             output_string_z1 = 'z_start = %.1f, z_end = %.1f, dz = %.1f' % tuple(z_range)
-            output_string_z2 = 'z_elements = %i, z_nodes = %i' % (z_elemts, z_nodes)
+            output_string_z2 = 'z_elements = %i, z_nodes = %i' % (z_elmts, z_nodes)
             print(output_string_r1)
             print(output_string_r2)
             print(output_string_z1)
@@ -145,14 +145,15 @@ class SOLVER:
         
         for r_elmt_cnt in range(self.Relmts):
             for z_elmt_cnt in range(self.Zelmts):
+                # CH_sw_elmts
                 if self.CH_sw_elmts[r_elmt_cnt, z_elmt_cnt] == 1.0:
-                    #
+                    # CH_sw_elmts_r_ext
                     self.CH_sw_elmts_r_ext[r_elmt_cnt+0, z_elmt_cnt+0] = 1.0
                     self.CH_sw_elmts_r_ext[r_elmt_cnt+1, z_elmt_cnt+0] = 1.0
-                    #
+                    # CH_sw_elmts_z_ext
                     self.CH_sw_elmts_z_ext[r_elmt_cnt+0, z_elmt_cnt+0] = 1.0
                     self.CH_sw_elmts_z_ext[r_elmt_cnt+0, z_elmt_cnt+1] = 1.0
-                    #
+                    # CH_sw_nodes
                     self.CH_sw_nodes[r_elmt_cnt+0, z_elmt_cnt+0] = 1.0
                     self.CH_sw_nodes[r_elmt_cnt+1, z_elmt_cnt+0] = 1.0
                     self.CH_sw_nodes[r_elmt_cnt+0, z_elmt_cnt+1] = 1.0
@@ -168,20 +169,20 @@ class SOLVER:
         self.CH_nodes = set()
         
         for each_mat_index in range(len(ch_r)):
-            #
+            # CH_elmts
             self.CH_elmts.add( (ch_r[each_mat_index]+0, ch_z[each_mat_index]+0) )
-            #
+            # CH_elmts_r_ext
             self.CH_elmts_r_ext.add( (ch_r[each_mat_index]+0, ch_z[each_mat_index]+0) )
             self.CH_elmts_r_ext.add( (ch_r[each_mat_index]+1, ch_z[each_mat_index]+0) )
-            #
+            # CH_elmts_z_ext
             self.CH_elmts_z_ext.add( (ch_r[each_mat_index]+0, ch_z[each_mat_index]+0) )
             self.CH_elmts_z_ext.add( (ch_r[each_mat_index]+0, ch_z[each_mat_index]+1) )
-            #
+            # CH_nodes
             self.CH_nodes.add( (ch_r[each_mat_index]+0, ch_z[each_mat_index]+0) )
             self.CH_nodes.add( (ch_r[each_mat_index]+1, ch_z[each_mat_index]+0) )
             self.CH_nodes.add( (ch_r[each_mat_index]+0, ch_z[each_mat_index]+1) )
             self.CH_nodes.add( (ch_r[each_mat_index]+1, ch_z[each_mat_index]+1) )
-        #
+        # set() -> list()
         self.CH_elmts = list(self.CH_elmts)
         self.CH_elmts_r_ext = list(self.CH_elmts_r_ext)
         self.CH_elmts_z_ext = list(self.CH_elmts_z_ext)
@@ -242,6 +243,18 @@ class SOLVER:
 
         # return
         return ext_bias_region
+
+    # ===== setting fixed charge =====
+    def set_fixed_charge(self, fixed_charge_density):
+        # 1D serialization
+        self.fixed_charge = np.zeros(self.RZnodes)
+        #
+        for r_node_cnt in range(80, 100):
+            for z_node_cnt in range(25, 60):
+                #
+                index_r_z = self.Rnodes * (z_node_cnt+0) + (r_node_cnt+0)
+                #
+                self.fixed_charge[index_r_z] = self.q * fixed_charge_density
 
     # ===== making poisson matrix =====
     def make_poisson_matrix(self, coord_type, ext_bias_region):
@@ -343,11 +356,14 @@ class SOLVER:
         # external bias conditions
         ext_bias_region = self.set_external_bias(mat_no_ext_bias_cond)
 
+        # fixed charge
+        self.set_fixed_charge(fixed_charge_density=1e25)
+
         # making poisson matrix
         self.make_poisson_matrix(coord_type, ext_bias_region)
 
         # solving poission equation (sparse matrix solver)
-        self.V = sc.sparse.linalg.spsolve(self.PMcsr, self.ext_bias)
+        self.V = sc.sparse.linalg.spsolve(self.PMcsr, self.ext_bias + self.fixed_charge)
 
         # 1D serialization -> 2D array
         self.V2 = np.resize(self.V, (self.Znodes, self.Rnodes)).T
@@ -376,11 +392,13 @@ class SOLVER:
 #
 
 solver = SOLVER()
-solver.make_grid(cd=1300, r_range=[0, 750, 5], z_range=[0, 430, 5])
-solver.channel_doping(dopant_density=1.0e18)
+solver.make_grid(cd=1300, r_range=[0, 750, 5], z_range=[0, 430, 5])     # angstrom [1e-10 m]
+solver.channel_doping(dopant_density=1.0e18)                            # []
 solver.cal_built_in_potential(temp_celsius=25.0)
 solver.ohmic_contacts(bl_mat_no=101, sl_mat_no=102)
 solver.solve_poisson_equation(coord_type='2d_cyl', mat_no_ext_bias_cond={101:0.5, 102:0.0, 110:1.0})
+
+
 
 
 
