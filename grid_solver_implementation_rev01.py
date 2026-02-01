@@ -282,7 +282,7 @@ class GRID:
                         self.ELE_no[each_r_index+1, each_z_index+0] = each_ele_no     # electrode number
                         self.ELE_no[each_r_index+0, each_z_index+1] = each_ele_no     # electrode number
                         self.ELE_no[each_r_index+1, each_z_index+1] = each_ele_no     # electrode number
-            
+     
         # 2D array (EP, MU_N, MU_P) for FDM
         self.EP = np.zeros([self.R_elmts_ea, self.Z_elmts_ea])          # electric permittivity (elements, elements)
         self.MU_N = np.zeros([self.R_elmts_ea, self.Z_elmts_ea])        # electron mobility (elements, elements)
@@ -328,6 +328,13 @@ class GRID:
 
     # ===== setting semiconductor properties =====
     def set_semiconductor_properties(self, doping_density, dopant_type, op_temp, ohmic_contact):
+        # semiconductor region (target nodes)
+        self.S_TG = []
+        r_array, z_array = np.where( self.SW_S == 1.0 )
+        for each_point in range(len(r_array)):
+            each_node = [ r_array[each_point], z_array[each_point] ]
+            self.S_TG.append(each_node)
+
         # doping (free carrier provider) (nodes, nodes)
         if dopant_type == 'n':
             self.DP = np.where( self.SW_S==1.0, +doping_density, 0.0 )      # [m]^-3
