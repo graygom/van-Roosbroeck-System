@@ -189,7 +189,7 @@ class GRID:
                     self.Z_info['M'].append( self.Z_info[each_z_info_name]['Z:M'][each_z_coord][1] )
                     # adding electrode number (elements, string)
                     self.Z_info['E'].append( self.Z_info[each_z_info_name]['Z:M'][each_z_coord][0] )
-
+        
         # check the size of 2D array (RZ coordinates, for finite difference method)
         self.Z_elmts = self.Z_info['Z']
         self.Z_nodes = self.Z_elmts + [ self.Z_elmts[-1] + self.dZ ]
@@ -200,6 +200,9 @@ class GRID:
         self.R_nodes = self.R_elmts + [ self.R_elmts[-1] + self.dR ]
         self.R_elmts_ea = len(self.R_elmts)                             # total number of R elements
         self.R_nodes_ea = len(self.R_nodes)                             # total number of R nodes
+
+        self.RZ_elmts_ea = self.R_elmts_ea * self.Z_elmts_ea            # for sparse matrix
+        self.RZ_nodes_ea = self.R_nodes_ea * self.Z_nodes_ea            # for sparse matrix
 
         # 2D array (RZ_R, RZ_Z, RZ_dR, RZ_dZ, RZ_Ravg, RZ_Zavg, RZ_dRavg, RZ_dZavg) for FDM
         self.RZ_R = np.zeros([self.R_nodes_ea, self.Z_nodes_ea])        # R coordinate (nodes, nodes)
@@ -225,8 +228,7 @@ class GRID:
         self.ELE_no = np.zeros([self.R_elmts_ea, self.Z_elmts_ea])      # electrode no (elements, elements)
         self.MAT_no_info = {}                                           # mat_no : mat_name , ex) {5: 'VOID', 4: 'LINER', 11: 'SI', 0: 'TOX', 1: 'CTN', 2: 'BOX_SIO2', 6: 'ON_SIO2', 3: 'BOX_AL2O3', 10: 'WL'}
         self.MIS_no_info = {}                                           # mis_no : mis_name , ex) {1: 'I', 2: 'S', 0: 'M'}
-        self.ELE_no_info = {}                                           # ele_no : ele_name , ex) {0: 'WL', 1: 'WL', 2: 'WL', 3: 'WL', 4: 'WL'...
-
+        
         for each_z_index in range(self.Z_elmts_ea):
             #
             radial_name = self.Z_info['M'][each_z_index]
@@ -248,6 +250,7 @@ class GRID:
         self.SW_S = np.zeros([self.R_nodes_ea, self.Z_nodes_ea])        # switch for semiconductor (nodes, nodes)
         self.SW_M = np.zeros([self.R_nodes_ea, self.Z_nodes_ea])        # switch for metal (nodes, nodes)
         self.ELE_no = -np.ones([self.R_nodes_ea, self.Z_nodes_ea])      # electrode number (nodes, nodes)
+        self.ELE_no_info = {}                                           # ele_no : ele_name , ex) {0: 'WL', 1: 'WL', 2: 'WL', 3: 'WL', 4: 'WL'...
 
         for each_z_index in range(self.Z_elmts_ea):
             for each_r_index in range(self.R_elmts_ea):
@@ -255,12 +258,12 @@ class GRID:
                 mis_no = self.MIS_no[each_r_index, each_z_index]
                 mis_name = self.MIS_no_info[mis_no]
                 ele_no = self.Z_info['E'][each_z_index]
-                #
+                # collecting electrodes no & name
                 if ele_no != 0:
                     for each_ele_name in ele_no.keys():
                         each_ele_no = ele_no[each_ele_name]
                         self.ELE_no_info[each_ele_no] = each_ele_name
-                #
+                # 
                 if mis_name == 'S':
                     self.SW_S[each_r_index+0, each_z_index+0] = 1.0     # semiconductor
                     self.SW_S[each_r_index+1, each_z_index+0] = 1.0     # semiconductor
@@ -272,14 +275,14 @@ class GRID:
                     self.SW_M[each_r_index+1, each_z_index+0] = 1.0     # metal
                     self.SW_M[each_r_index+0, each_z_index+1] = 1.0     # metal
                     self.SW_M[each_r_index+1, each_z_index+1] = 1.0     # metal
-
+                    # check electrode number
                     for each_ele_name in ele_no.keys():
                         each_ele_no = ele_no[each_ele_name]
                         self.ELE_no[each_r_index+0, each_z_index+0] = each_ele_no     # electrode number
                         self.ELE_no[each_r_index+1, each_z_index+0] = each_ele_no     # electrode number
                         self.ELE_no[each_r_index+0, each_z_index+1] = each_ele_no     # electrode number
                         self.ELE_no[each_r_index+1, each_z_index+1] = each_ele_no     # electrode number
-            
+     
         # 2D array (EP, MU_N, MU_P) for FDM
         self.EP = np.zeros([self.R_elmts_ea, self.Z_elmts_ea])          # electric permittivity (elements, elements)
         self.MU_N = np.zeros([self.R_elmts_ea, self.Z_elmts_ea])        # electron mobility (elements, elements)
@@ -317,14 +320,24 @@ class GRID:
 
         # visualizations
         if False:
+            print('ELE_no: ', set(list(self.ELE_no.reshape(-1))) )
+            print('ELE_no_info:', self.ELE_no_info )
+            
             fig, ax = plt.subplots(2, 1)
-            ax[0].imshow(self.MIS_no, origin='lower', aspect='equal')
+            ax[0].imshow(self.SW_S, origin='lower', aspect='equal')
             ax[1].imshow(self.ELE_no, origin='lower', aspect='equal')
             plt.show()
 
 
     # ===== setting semiconductor properties =====
     def set_semiconductor_properties(self, doping_density, dopant_type, op_temp, ohmic_contact):
+        # semiconductor region (target nodes)
+        self.S_TG = []
+        r_array, z_array = np.where( self.SW_S == 1.0 )
+        for each_point in range(len(r_array)):
+            each_node = [ r_array[each_point], z_array[each_point] ]
+            self.S_TG.append(each_node)
+
         # doping (free carrier provider) (nodes, nodes)
         if dopant_type == 'n':
             self.DP = np.where( self.SW_S==1.0, +doping_density, 0.0 )      # [m]^-3
@@ -352,27 +365,134 @@ class GRID:
         for each_ohmic_contact in ohmic_contact.keys():
             # details
             elec_no, elec_z_position = ohmic_contact[each_ohmic_contact]
+            
             # updating ELE_no_info
             self.ELE_no_info[elec_no] = each_ohmic_contact
-            # updating SW_M
-            #self.SW_M[:, elec_z_position] = self.SW_S[:, elec_z_position]
+
             # updating ELE_no
-            self.ELE_no[:, elec_z_position] = np.where( self.SW_M[:, elec_z_position] == 1.0, elec_no, 0.0)
-        
+            if elec_z_position != 0.5:
+                # MIS structure
+                self.ELE_no[:, elec_z_position] = np.where( self.SW_S[:, elec_z_position] == 1.0, elec_no, -1.0)
+            else:
+                # MIM structure
+                if each_ohmic_contact == 'BL':
+                    r_array, z_array = np.where( self.SW_S[:, :int(self.Z_nodes_ea/2.0)] == 1.0 )
+                    self.ELE_no[ (r_array, z_array) ] = elec_no
+                if each_ohmic_contact == 'SL':
+                    r_array, z_array = np.where( self.SW_S[:, int(self.Z_nodes_ea/2.0):] == 1.0 )
+                    self.ELE_no[ (r_array, z_array+int(self.Z_nodes_ea/2.0)) ] = elec_no
+                    
+
         # visualizations
-        if True:
+        if False:
+            print('ELE_no: ', set(list(self.ELE_no.reshape(-1))) )
+            print('ELE_no_info:', self.ELE_no_info )
+            
             fig, ax = plt.subplots(3, 1)
-            ax[0].imshow(self.MAT_no, origin='lower', aspect='equal')
+            ax[0].imshow(self.SW_M, origin='lower', aspect='equal')
             ax[1].imshow(self.SW_S, origin='lower', aspect='equal')
-            ax[2].imshow(self.SW_M, origin='lower', aspect='equal')
+            ax[2].imshow(self.ELE_no, origin='lower', aspect='equal')
             plt.show()
 
 
     # ===== making poisson matrix =====
     def make_poission_matrix(self):
-        #
-        pass
+        # STEP 0: making dok sparse matrix
+        self.PM = sc.sparse.dok_matrix( (self.RZ_nodes_ea, self.RZ_nodes_ea) )
+
+        # STEP 1: processing dirichlet boundary conditions (electrodes)
+        for each_elec_no in self.ELE_no_info.keys():
+            # finding where elec no points are
+            selected_rz_array = np.where( self.ELE_no == each_elec_no)
+            selected_r_array, selected_z_array = selected_rz_array
+            # each point
+            for each_selected_point in range(len(selected_r_array)):
+                # selected point
+                selected_r = selected_r_array[each_selected_point]
+                selected_z = selected_z_array[each_selected_point]
+                # sparse matrix index (1D serialization)
+                selected_r_z = self.R_nodes_ea * (selected_z) + selected_r
+                # sparse matrix elements (1D serialization)
+                self.PM[selected_r_z, selected_r_z] = +1.0
+
+        # STEP 2-1: processing neumann boundary conditions (Z boundaries)
+        for selected_z in [0, self.Z_nodes_ea-1]:
+            for selected_r in range(self.R_nodes_ea):
+                # sparse matrix index (1D serialization)
+                selected_r_z = self.R_nodes_ea * (selected_z) + selected_r
+                # except dirichlet boundary conditions
+                if self.PM[selected_r_z, selected_r_z] != 1.0:
+                    # bottom
+                    if selected_z == 0:
+                        # sparse matrix index (1D serialization)
+                        selected_r_zp1 = self.R_nodes_ea * (selected_z+1) + selected_r
+                        # sparse matrix elements (1D serialization)
+                        self.PM[selected_r_z, selected_r_z  ] = +1.0
+                        self.PM[selected_r_z, selected_r_zp1] = -1.0
+                    # top
+                    if selected_z == (self.Z_nodes_ea-1):
+                        # sparse matrix index (1D serialization)
+                        selected_r_zm1 = self.R_nodes_ea * (selected_z-1) + selected_r
+                        # sparse matrix elements (1D serialization)
+                        self.PM[selected_r_z, selected_r_z  ] = +1.0
+                        self.PM[selected_r_z, selected_r_zm1] = -1.0
+
+        # STEP 2-2: processing neumann boundary conditions (R boundaries)
+        for selected_r in [0, self.R_nodes_ea-1]:
+            for selected_z in range(self.Z_nodes_ea):
+                # sparse matrix index (1D serialization)
+                selected_r_z = self.R_nodes_ea * (selected_z) + selected_r
+                # except dirichlet boundary conditions
+                if self.PM[selected_r_z, selected_r_z] != 1.0:
+                    # inside
+                    if selected_r == 0:
+                        # sparse matrix index (1D serialization)
+                        selected_rp1_z = self.R_nodes_ea * (selected_z) + (selected_r+1)
+                        # sparse matrix elements (1D serialization)
+                        self.PM[selected_r_z, selected_r_z  ] = +1.0
+                        self.PM[selected_r_z, selected_rp1_z] = -1.0
+                    # outside
+                    if selected_r == (self.R_nodes_ea-1):
+                        # sparse matrix index (1D serialization)
+                        selected_rm1_z = self.R_nodes_ea * (selected_z) + (selected_r-1)
+                        # sparse matrix elements (1D serialization)
+                        self.PM[selected_r_z, selected_r_z  ] = +1.0
+                        self.PM[selected_r_z, selected_rm1_z] = -1.0
+
+        # STEP 3: poisson finite difference equations
+        for selected_r in range(1, self.R_nodes_ea-1):
+            for selected_z in range(1, self.Z_nodes_ea-1):
+                # sparse matrix index (1D serialization)
+                selected_r_z   = self.R_nodes_ea * (selected_z+0) + (selected_r+0)
+                selected_rp1_z = self.R_nodes_ea * (selected_z+0) + (selected_r+1)
+                selected_rm1_z = self.R_nodes_ea * (selected_z+0) + (selected_r-1)
+                selected_r_zp1 = self.R_nodes_ea * (selected_z+1) + (selected_r+0)
+                selected_r_zm1 = self.R_nodes_ea * (selected_z-1) + (selected_r+0)
+                # except dirichlet boundary conditions & neumann boundary conditions
+                if self.PM[selected_r_z, selected_r_z] != 1.0:
+                    # sparse matrix constants (r-1, z)
+                    a_rm1_z  = ( self.RZ_Ravg[selected_r-1, selected_z+0] / self.RZ_R[selected_r, selected_z] )         # geometry factor
+                    a_rm1_z *= ( self.EP_z_avg_on_Er[selected_r-1, selected_z-1] )                                      # electric permittivity
+                    a_rm1_z /= ( self.RZ_dR[selected_r-1, selected_z+0] * self.RZ_dRavg[selected_r-1, selected_z])
+                    # sparse matrix constants (r+1, z)
+                    a_rp1_z  = ( self.RZ_Ravg[selected_r+0, selected_z+0] / self.RZ_R[selected_r, selected_z] )         # geometry factor
+                    a_rp1_z *= ( self.EP_z_avg_on_Er[selected_r+0, selected_z-1] )                                      # electric permittivity
+                    a_rp1_z /= ( self.RZ_dR[selected_r+0, selected_z+0] * self.RZ_dRavg[selected_r-1, selected_z])
+                    # sparse matrix constants (r, z-1)
+                    a_r_zm1  = ( self.EP_r_avg_on_Ez[selected_r-1, selected_z-1] )                                      # electric permittivity
+                    a_r_zm1 /= ( self.RZ_dZ[selected_r+0, selected_z-1] * self.RZ_dZavg[selected_r+0, selected_z-1])
+                    # sparse matrix constants (r, z+1)
+                    a_r_zp1  = ( self.EP_r_avg_on_Ez[selected_r-1, selected_z+0] )                                      # electric permittivity
+                    a_r_zp1 /= ( self.RZ_dZ[selected_r+0, selected_z+0] * self.RZ_dZavg[selected_r+0, selected_z-1])
+                    # sparse matrix elements (1D serialization)
+                    self.PM[selected_r_z, selected_r_z  ] = +a_rm1_z + a_rp1_z + a_r_zm1 + a_r_zp1
+                    self.PM[selected_r_z, selected_rp1_z] = -a_rp1_z
+                    self.PM[selected_r_z, selected_rm1_z] = -a_rm1_z
+                    self.PM[selected_r_z, selected_r_zp1] = -a_r_zp1
+                    self.PM[selected_r_z, selected_r_zm1] = -a_r_zm1
         
+        # STEP 4: CSR format conversion
+        self.PMcsr = self.PM.tocsr()
         
 
     # ===== debugging =====
@@ -399,11 +519,77 @@ class GRID:
                 
 
 #
-# CLASS: SOLVER (using sparse matrix)
+# CLASS: SOLVER (using sparse matrix), inheritance from GRID class
 #
 
 class SOLVER(GRID):
-    pass
+
+    # ===== making external bias vector =====
+    def make_external_bias_vector(self, external_bias_input):
+        # external bias vector
+        self.EB = np.zeros(self.RZ_nodes_ea)
+        #
+        for each_ele_no in external_bias_input.keys():
+            # finding points
+            r_array, z_array = np.where( self.ELE_no == each_ele_no )
+            # sweep
+            for each_point in range(len(r_array)):
+                # each point
+                each_r = r_array[each_point]
+                each_z = z_array[each_point]
+                # 1D serialization
+                selected_r_z = self.R_nodes_ea * (each_z) + (each_r)
+                # BL, SL contact (+ bulit-in potential)
+                if (self.ELE_no_info[each_ele_no] == 'BL') or (self.ELE_no_info[each_ele_no] == 'SL'):
+                    #                          built-in potential     +        external bias
+                    self.EB[selected_r_z] =  self.Vbi[each_r, each_z] + external_bias_input[each_ele_no]
+                elif (self.ELE_no_info[each_ele_no] == 'WL'):
+                    self.EB[selected_r_z] =  external_bias_input[each_ele_no]
+
+        # visulization
+        if False:
+            self.EB2 = np.resize( self.EB, (self.Z_nodes_ea, self.R_nodes_ea) ).T
+            plt.imshow(self.EB2, origin='lower', aspect='equal')
+            plt.show()
+            
+
+    # ===== solving poission equation =====
+    def solve_poission_equation(self, fig_output=False):
+        # scipy sparse matrix solver
+        self.V = sc.sparse.linalg.spsolve(self.PMcsr, self.EB)
+
+        # post analysis
+        self.V2 = np.resize(self.V, (self.Z_nodes_ea, self.R_nodes_ea)).T
+        self.Er = (self.V2[1:,:] - self.V2[:-1,:]) / self.RZ_dR
+        self.Ez = (self.V2[:,1:] - self.V2[:,:-1]) / self.RZ_dZ
+        self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
+
+        # visualization
+        if fig_output != False:
+            fig, ax = plt.subplots(3, 2, figsize=(16, 10))
+            ax[0,0].imshow(self.MAT_no, origin='lower', aspect='equal')
+            ax[0,0].set_title('geometry')
+            ax[0,0].set_ylabel('R')
+            ax[0,1].imshow(self.V2, origin='lower', aspect='equal')
+            ax[0,1].set_title('V potential')
+            ax[0,1].set_ylabel('R')
+            ax[1,0].imshow(self.Er, origin='lower', aspect='equal')
+            ax[1,0].set_title('Er field')
+            ax[1,0].set_ylabel('R')
+            ax[1,1].imshow(self.Ez, origin='lower', aspect='equal')
+            ax[1,1].set_title('Ez field')
+            ax[1,1].set_ylabel('R')
+            ax[2,0].imshow(self.E, origin='lower', aspect='equal')
+            ax[2,0].set_title('|E| field mag.')
+            ax[2,0].set_ylabel('R')
+            ax[2,0].set_xlabel('Z')
+            ax[2,1].imshow(self.ELE_no, origin='lower', aspect='equal')
+            ax[2,1].set_title('electrode no.')
+            ax[2,1].set_ylabel('R')
+            ax[2,1].set_xlabel('Z')
+            plt.savefig(fig_output)
+            plt.show()
+            plt.close()
 
 
 
@@ -411,56 +597,60 @@ class SOLVER(GRID):
 # MAIN
 #
 
-grid = GRID()
+grid_solver = SOLVER()
 
 # material parameters
-grid.add_material_parameters(name='WL', name_no=10, category='M', category_no=0, wf=4.5)
-grid.add_material_parameters(name='TOX', name_no=0, category='I', category_no=1, k=4.9)
-grid.add_material_parameters(name='CTN', name_no=1, category='I', category_no=1, k=7.5)
-grid.add_material_parameters(name='BOX_SIO2', name_no=2, category='I', category_no=1, k=5.0)
-grid.add_material_parameters(name='BOX_AL2O3', name_no=3, category='I', category_no=1, k=9.0)
-grid.add_material_parameters(name='LINER', name_no=4, category='I', category_no=1, k=3.9)
-grid.add_material_parameters(name='VOID', name_no=5, category='I', category_no=1, k=1.0)
-grid.add_material_parameters(name='ON_SIO2', name_no=6, category='I', category_no=1, k=3.9)
-grid.add_material_parameters(name='SI', name_no=11, category='M', category_no=2, k=11.7, n_int=1.5e16, mu_n=0.14, mu_p=0.045, tau_n=1e-6, tau_p=1e-5)
+grid_solver.add_material_parameters(name='WL', name_no=10, category='M', category_no=0, wf=4.5)
+grid_solver.add_material_parameters(name='TOX', name_no=0, category='I', category_no=1, k=4.9)
+grid_solver.add_material_parameters(name='CTN', name_no=1, category='I', category_no=1, k=7.5)
+grid_solver.add_material_parameters(name='BOX_SIO2', name_no=2, category='I', category_no=1, k=5.0)
+grid_solver.add_material_parameters(name='BOX_AL2O3', name_no=3, category='I', category_no=1, k=9.0)
+grid_solver.add_material_parameters(name='LINER', name_no=4, category='I', category_no=1, k=3.9)
+grid_solver.add_material_parameters(name='VOID', name_no=5, category='I', category_no=1, k=1.0)
+grid_solver.add_material_parameters(name='ON_SIO2', name_no=6, category='I', category_no=1, k=3.9)
+grid_solver.add_material_parameters(name='SI', name_no=11, category='S', category_no=2, k=11.7, n_int=1.5e16, mu_n=0.14, mu_p=0.045, tau_n=1e-6, tau_p=1e-5)
 
 # spatial resolution
-grid.set_spatial_resolution(dr=5.0, dz=5.0)     # angstrom
+grid_solver.set_spatial_resolution(dr=5.0, dz=5.0)     # angstrom
 
 # radial composition (from CD)
 inward_thk  = {'BOX_SIO2':70.0, 'CTN':50.0, 'TOX':50.0, 'SI':70.0, 'LINER':70.0, 'VOID':-1}         # angstrom
 outward_thk_wl_c = {'BOX_AL2O3':30.0, 'WL':100.0}                                                   # angstrom
 outward_thk_wl_e = {'BOX_AL2O3':130.0}                                                              # angstrom
 outward_thk_sp = {'ON_SIO2':130.0}                                                                  # angstrom
-grid.add_radial_composition(name='WL_C', cd=1300, inside=inward_thk, outside=outward_thk_wl_c)      # angstrom
-grid.add_radial_composition(name='WL_E', cd=1300, inside=inward_thk, outside=outward_thk_wl_e)      # angstrom
-grid.add_radial_composition(name='SP', cd=1300, inside=inward_thk, outside=outward_thk_sp)          # angstrom
+grid_solver.add_radial_composition(name='WL_C', cd=1300, inside=inward_thk, outside=outward_thk_wl_c)      # angstrom
+grid_solver.add_radial_composition(name='WL_E', cd=1300, inside=inward_thk, outside=outward_thk_wl_e)      # angstrom
+grid_solver.add_radial_composition(name='SP', cd=1300, inside=inward_thk, outside=outward_thk_sp)          # angstrom
 
 # vertical composition (from bottom)
-total_wl_number = 1
+total_wl_number = 7
+
 for each_wl_number in range(total_wl_number):
     each_wl_name = 'WL%03i' % each_wl_number
 
-    # MIS
-    #grid.add_vertical_composition(z_info_name=each_wl_name+'_SP_B', height=120.0, electrodes=0.0,                   r_info_name='SP')
-    #grid.add_vertical_composition(z_info_name=each_wl_name+'_E_B',  height=30.0,  electrodes=0.0,                   r_info_name='WL_E')
-    #grid.add_vertical_composition(z_info_name=each_wl_name+'_C',    height=120.0, electrodes={'WL':each_wl_number}, r_info_name='WL_C')
-    #grid.add_vertical_composition(z_info_name=each_wl_name+'_E_T',  height=30.0,  electrodes=0.0,                   r_info_name='WL_E')
-    #grid.add_vertical_composition(z_info_name=each_wl_name+'_SP_T', height=120.0, electrodes=0.0,                   r_info_name='SP')
-
-    # MIM
-    grid.add_vertical_composition(z_info_name=each_wl_name+'_SP_B', height=120.0, electrodes={'SI':10000},                      r_info_name='SP')
-    grid.add_vertical_composition(z_info_name=each_wl_name+'_E_B',  height=30.0,  electrodes={'SI':10000},                      r_info_name='WL_E')
-    grid.add_vertical_composition(z_info_name=each_wl_name+'_C',    height=120.0, electrodes={'SI':10000, 'WL':each_wl_number}, r_info_name='WL_C')
-    grid.add_vertical_composition(z_info_name=each_wl_name+'_E_T',  height=30.0,  electrodes={'SI':10000},                      r_info_name='WL_E')
-    grid.add_vertical_composition(z_info_name=each_wl_name+'_SP_T', height=120.0, electrodes={'SI':10000},                      r_info_name='SP')
+    grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_SP_B', height=120.0, electrodes=0.0,                   r_info_name='SP')
+    grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_E_B',  height=30.0,  electrodes=0.0,                   r_info_name='WL_E')
+    grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_C',    height=120.0, electrodes={'WL':each_wl_number}, r_info_name='WL_C')
+    grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_E_T',  height=30.0,  electrodes=0.0,                   r_info_name='WL_E')
+    grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_SP_T', height=120.0, electrodes=0.0,                   r_info_name='SP')
 
 # arrange radial and vertical composition
-grid.arrange_radial_vertical_composition()
+grid_solver.arrange_radial_vertical_composition()
 
 # set semiconductor properties
-bl_sl_contact = {'BL':[10001, 0], 'SL':[10002, -1]}     # elec_name : [elec_no, z_position]
-grid.set_semiconductor_properties(doping_density=1e18, dopant_type='n', op_temp=25.0, ohmic_contact=bl_sl_contact)
+bl_sl_contact = {'BL':[10001, 0],   'SL':[10002, -1] }     # MIS structure, elec_name : [elec_no, z_position]
+bl_sl_contact = {'BL':[10001, 0.5], 'SL':[10002, 0.5]}     # MIM structure, elec_name : [elec_no, 0.5]
+grid_solver.set_semiconductor_properties(doping_density=1e18, dopant_type='n', op_temp=25.0, ohmic_contact=bl_sl_contact)
+
+# make poisson matrix
+grid_solver.make_poission_matrix()
+
+# make external bias vector
+bl_sl_wl_ext_bias = {10001:0.0, 10002:0.0, 0:1.0, 1:1.0, 2:1.0, 3:1.0, 4:1.0, 5:1.0, 6:1.0}
+grid_solver.make_external_bias_vector(external_bias_input=bl_sl_wl_ext_bias)
+
+# solve poission equation
+grid_solver.solve_poission_equation(fig_output='poisson_solver_output.png')
 
 # debugging
 #grid.debugging()
