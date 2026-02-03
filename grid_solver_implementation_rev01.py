@@ -228,8 +228,7 @@ class GRID:
         self.ELE_no = np.zeros([self.R_elmts_ea, self.Z_elmts_ea])      # electrode no (elements, elements)
         self.MAT_no_info = {}                                           # mat_no : mat_name , ex) {5: 'VOID', 4: 'LINER', 11: 'SI', 0: 'TOX', 1: 'CTN', 2: 'BOX_SIO2', 6: 'ON_SIO2', 3: 'BOX_AL2O3', 10: 'WL'}
         self.MIS_no_info = {}                                           # mis_no : mis_name , ex) {1: 'I', 2: 'S', 0: 'M'}
-        self.ELE_no_info = {}                                           # ele_no : ele_name , ex) {0: 'WL', 1: 'WL', 2: 'WL', 3: 'WL', 4: 'WL'...
-
+        
         for each_z_index in range(self.Z_elmts_ea):
             #
             radial_name = self.Z_info['M'][each_z_index]
@@ -251,6 +250,7 @@ class GRID:
         self.SW_S = np.zeros([self.R_nodes_ea, self.Z_nodes_ea])        # switch for semiconductor (nodes, nodes)
         self.SW_M = np.zeros([self.R_nodes_ea, self.Z_nodes_ea])        # switch for metal (nodes, nodes)
         self.ELE_no = -np.ones([self.R_nodes_ea, self.Z_nodes_ea])      # electrode number (nodes, nodes)
+        self.ELE_no_info = {}                                           # ele_no : ele_name , ex) {0: 'WL', 1: 'WL', 2: 'WL', 3: 'WL', 4: 'WL'...
 
         for each_z_index in range(self.Z_elmts_ea):
             for each_r_index in range(self.R_elmts_ea):
@@ -320,6 +320,9 @@ class GRID:
 
         # visualizations
         if False:
+            print('ELE_no: ', set(list(self.ELE_no.reshape(-1))) )
+            print('ELE_no_info:', self.ELE_no_info )
+            
             fig, ax = plt.subplots(2, 1)
             ax[0].imshow(self.SW_S, origin='lower', aspect='equal')
             ax[1].imshow(self.ELE_no, origin='lower', aspect='equal')
@@ -362,17 +365,33 @@ class GRID:
         for each_ohmic_contact in ohmic_contact.keys():
             # details
             elec_no, elec_z_position = ohmic_contact[each_ohmic_contact]
+            
             # updating ELE_no_info
             self.ELE_no_info[elec_no] = each_ohmic_contact
+
             # updating ELE_no
-            self.ELE_no[:, elec_z_position] = np.where( self.SW_S[:, elec_z_position] == 1.0, elec_no, -1.0)
+            if elec_z_position != 0.5:
+                # MIS structure
+                self.ELE_no[:, elec_z_position] = np.where( self.SW_S[:, elec_z_position] == 1.0, elec_no, -1.0)
+            else:
+                # MIM structure
+                if each_ohmic_contact == 'BL':
+                    r_array, z_array = np.where( self.SW_S[:, :int(self.Z_nodes_ea/2.0)] == 1.0 )
+                    self.ELE_no[ (r_array, z_array) ] = elec_no
+                if each_ohmic_contact == 'SL':
+                    r_array, z_array = np.where( self.SW_S[:, int(self.Z_nodes_ea/2.0):] == 1.0 )
+                    self.ELE_no[ (r_array, z_array+int(self.Z_nodes_ea/2.0)) ] = elec_no
+                    
 
         # visualizations
         if False:
+            print('ELE_no: ', set(list(self.ELE_no.reshape(-1))) )
+            print('ELE_no_info:', self.ELE_no_info )
+            
             fig, ax = plt.subplots(3, 1)
-            ax[0].imshow(self.MAT_no, origin='lower', aspect='equal')
-            ax[1].imshow(self.ELE_no, origin='lower', aspect='equal')
-            ax[2].imshow(self.SW_M, origin='lower', aspect='equal')
+            ax[0].imshow(self.SW_M, origin='lower', aspect='equal')
+            ax[1].imshow(self.SW_S, origin='lower', aspect='equal')
+            ax[2].imshow(self.ELE_no, origin='lower', aspect='equal')
             plt.show()
 
 
@@ -535,7 +554,7 @@ class SOLVER(GRID):
             
 
     # ===== solving poission equation =====
-    def solve_poission_equation(self):
+    def solve_poission_equation(self, fig_output=False):
         # scipy sparse matrix solver
         self.V = sc.sparse.linalg.spsolve(self.PMcsr, self.EB)
 
@@ -546,7 +565,7 @@ class SOLVER(GRID):
         self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
 
         # visualization
-        if True:
+        if fig_output != False:
             fig, ax = plt.subplots(3, 2, figsize=(16, 10))
             ax[0,0].imshow(self.MAT_no, origin='lower', aspect='equal')
             ax[0,0].set_title('geometry')
@@ -564,9 +583,13 @@ class SOLVER(GRID):
             ax[2,0].set_title('|E| field mag.')
             ax[2,0].set_ylabel('R')
             ax[2,0].set_xlabel('Z')
+            ax[2,1].imshow(self.ELE_no, origin='lower', aspect='equal')
+            ax[2,1].set_title('electrode no.')
             ax[2,1].set_ylabel('R')
             ax[2,1].set_xlabel('Z')
+            plt.savefig(fig_output)
             plt.show()
+            plt.close()
 
 
 
@@ -605,36 +628,29 @@ total_wl_number = 7
 for each_wl_number in range(total_wl_number):
     each_wl_name = 'WL%03i' % each_wl_number
 
-    # MIS
     grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_SP_B', height=120.0, electrodes=0.0,                   r_info_name='SP')
     grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_E_B',  height=30.0,  electrodes=0.0,                   r_info_name='WL_E')
     grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_C',    height=120.0, electrodes={'WL':each_wl_number}, r_info_name='WL_C')
     grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_E_T',  height=30.0,  electrodes=0.0,                   r_info_name='WL_E')
     grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_SP_T', height=120.0, electrodes=0.0,                   r_info_name='SP')
 
-    # MIM
-    #grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_SP_B', height=120.0, electrodes={'SI':10000},                      r_info_name='SP')
-    #grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_E_B',  height=30.0,  electrodes={'SI':10000},                      r_info_name='WL_E')
-    #grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_C',    height=120.0, electrodes={'SI':10000, 'WL':each_wl_number}, r_info_name='WL_C')
-    #grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_E_T',  height=30.0,  electrodes={'SI':10000},                      r_info_name='WL_E')
-    #grid_solver.add_vertical_composition(z_info_name=each_wl_name+'_SP_T', height=120.0, electrodes={'SI':10000},                      r_info_name='SP')
-
 # arrange radial and vertical composition
 grid_solver.arrange_radial_vertical_composition()
 
 # set semiconductor properties
-bl_sl_contact = {'BL':[10001, 0], 'SL':[10002, -1]}     # elec_name : [elec_no, z_position]
+bl_sl_contact = {'BL':[10001, 0],   'SL':[10002, -1] }     # MIS structure, elec_name : [elec_no, z_position]
+bl_sl_contact = {'BL':[10001, 0.5], 'SL':[10002, 0.5]}     # MIM structure, elec_name : [elec_no, 0.5]
 grid_solver.set_semiconductor_properties(doping_density=1e18, dopant_type='n', op_temp=25.0, ohmic_contact=bl_sl_contact)
 
 # make poisson matrix
 grid_solver.make_poission_matrix()
 
 # make external bias vector
-bl_sl_wl_ext_bias = {10001:0.5, 10002:0.0, 0:0.0, 1:0.0, 2:1.0, 3:1.0, 4:1.0, 5:0.0, 6:0.0}
+bl_sl_wl_ext_bias = {10001:0.0, 10002:0.0, 0:1.0, 1:1.0, 2:1.0, 3:1.0, 4:1.0, 5:1.0, 6:1.0}
 grid_solver.make_external_bias_vector(external_bias_input=bl_sl_wl_ext_bias)
 
 # solve poission equation
-grid_solver.solve_poission_equation()
+grid_solver.solve_poission_equation(fig_output='poisson_solver_output.png')
 
 # debugging
 #grid.debugging()
