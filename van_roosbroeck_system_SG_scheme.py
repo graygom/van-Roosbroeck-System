@@ -377,7 +377,7 @@ class GRID:
         bl_sl_points = bl_points +sl_points
 
         # doping profile (initialization)
-        self.DP  = np.zeros(self.RZ_nodes_len)
+        self.DP    = np.zeros(self.RZ_nodes_len)
         dopant_type = doping[0]                     # 'n' or 'p'
         dopant_density = doping[1]                  # [m]^-3
         for each_point in (tg_points+bl_sl_points):
@@ -391,10 +391,16 @@ class GRID:
                 print('set_semiconductor_parameters() > invalid dopant type')
 
         # free carrier density, built-in potential (initialization)
-        n_int = self.MAT['SI']['n_int']
-        self.n1  = ( np.sqrt( self.DP**2 + 4.0*n_int**2 ) + self.DP ) / 2
-        self.p1  = ( np.sqrt( self.DP**2 + 4.0*n_int**2 ) - self.DP ) / 2
-        self.Vbi = self.Vtm * np.log( ( self.DP + np.sqrt( self.DP**2 + 4.0*n_int**2 ) ) / ( 2.0 * n_int ) )
+        self.N_INT = np.zeros(self.RZ_nodes_len)
+        for each_point in (tg_points+bl_sl_points):
+            r_node, z_node = each_point
+            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)
+            #
+            self.N_INT[index_r_z] = self.MAT['SI']['n_int']
+        
+        self.n1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) + self.DP ) / 2
+        self.p1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) - self.DP ) / 2
+        self.Vbi = self.Vtm * np.log( ( self.DP + np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) ) / ( 2.0 * self.N_INT ) )
 
         # coefficient of continuity equation matrix (initialization)
         self.CM = {}
@@ -405,6 +411,7 @@ class GRID:
         for each_point in tg_points:
             #
             each_r_node, each_z_node = each_point
+            #
             r_nodes.add(each_r_node)
             z_nodes.add(each_z_node)
             # making key
@@ -505,7 +512,7 @@ class GRID:
             print('z nodes = %.1f ~ %.1f' % (np.min(list(z_nodes)), np.max(list(z_nodes))))
 
         # debugging
-        if True:
+        if False:
             for each_tuple in [(72,1), (86,1), (72,449), (86,449), (73,1)]:
                 print(each_tuple, self.CM[each_tuple])
         
@@ -648,12 +655,16 @@ class SOLVER(GRID):
         # sweep
         for each_mat_mis in ['M']:
             for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
-                print('make_external_bias_vector() %s mat_o = %i, points = %i ea' % (each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no])) )
+                print('make_external_bias_vector() %s mat_no = %i, points = %i ea' % (each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no])) )
                 for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
                     # 1D serialization index
                     index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
-                    # external bias @ metal contact 
-                    self.EB[index_r_z] = external_bias_conditions[each_mat_no]
+                    # external bias @metal contact
+                    if (each_mat_no != 10001) and (each_mat_no != 10002):
+                        self.EB[index_r_z] = external_bias_conditions[each_mat_no]
+                    # external bias @BL, SL contact
+                    else:
+                        self.EB[index_r_z] = self.Vbi[index_r_z] + external_bias_conditions[each_mat_no]
 
     # ===== making fixed charge vector  =====
     def make_fixed_charge_vector(self, fixed_charge_density):
@@ -674,6 +685,9 @@ class SOLVER(GRID):
         # sparse matrix solver for poisson equation
         self.V1 = sc.sparse.linalg.spsolve(self.PMcsr, self.EB + self.q*(self.FC + self.p1 - self.n1 + self.DP) )
         self.V2 = self.V1.reshape(self.Z_nodes_len, self.R_nodes_len).T
+        self.Er = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.RZ_dR
+        self.Ez = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.RZ_dZ
+        self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
         
         # post processing 1 for continuity equations
         self.dVr_f = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.Vtm
@@ -691,14 +705,9 @@ class SOLVER(GRID):
         # debugging
         if True:
             print('poisson solver: V = [%.2f, %.2f]' % ( np.min(self.V1), np.max(self.V1) ) )
-            print('poisson solver: EB = [%.2f, %.2f]' % ( np.min(self.EB), np.max(self.EB) ) )
-            print('poisson solver: FC = [%.2e, %.2e]' % ( np.min(self.FC), np.max(self.FC) ) )
         
         # debugging
-        if True:
-            self.Er = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.RZ_dR
-            self.Ez = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.RZ_dZ
-            self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
+        if False:
             self.FC2 = self.FC.reshape(self.Z_nodes_len, self.R_nodes_len).T
             self.EB2 = self.EB.reshape(self.Z_nodes_len, self.R_nodes_len).T
         
@@ -764,23 +773,62 @@ class SOLVER(GRID):
         self.dPcsr = self.dP.tocsr()
 
     # ===== solving continuity equation  =====
-    def solve_continuity_equation(self):       
+    def solve_continuity_equation(self, dt, output_filename=False):
+        # updating N, P matrix for continuity equation
+        self.make_N_P_matrix(dt)
+        
         # sparse matrix solver for continuity equation
-        self.n1 = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 )
-        self.p1 = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 )
+        self.n1_new = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 )
+        self.p1_new = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 )
 
+        # calculating current
+        dn1 = self.n1_new - self.n1
+        dp1 = self.p1_new - self.p1
+        Jz_n_bl = 0.0
+        Jz_p_bl = 0.0
+        for each_r, each_z in list(self.RZ_MIS['M'][10001]):
+            index_r_zp1 = self.R_nodes_len * (each_z+1) + each_r
+            perimeter = (2.0 * np.pi * self.RZ_R[each_r, each_z])
+            area = self.RZ_dZ[each_r, each_z] * self.RZ_dR[each_r, each_z]
+            volume = perimeter * area
+            Jz_n_bl += self.q * dn1[index_r_zp1] * volume / dt
+            Jz_p_bl += self.q * dp1[index_r_zp1] * volume / dt
+        self.n1 = self.n1_new
+        self.p1 = self.p1_new
+        print('Jz_n_bl = %.2e, Jz_p_bl = %.2e' % (Jz_n_bl, Jz_p_bl) )
+        
         # debugging
         if True:
+            print('continuity solver: n = [%.3e, %.3e], p = [%.3e, %.3e]' % \
+                  ( np.min(self.n1), np.max(self.n1), np.min(self.p1), np.max(self.p1)  ) )
+
+        # debugging
+        if output_filename != False:
+            # 2D visualization 
             self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
             self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T
-
-            fig, ax = plt.subplots(2, 2)
-            ax[0,0].imshow(self.V2, origin='lower')
-            ax[0,1].imshow(self.E, origin='lower')
-            ax[1,0].imshow(self.n2, origin='lower')
-            ax[1,1].imshow(self.p2, origin='lower')
-            plt.show()
-    
+            #
+            fig, ax = plt.subplots(2, 2, figsize=(12,6))
+            ax00 = ax[0,0].imshow(self.V2, origin='lower')
+            ax[0,0].set_title('electric potential')
+            plt.colorbar(ax00)
+            #
+            ax01 = ax[0,1].imshow(self.E, origin='lower')
+            ax[0,1].set_title('electric field')
+            plt.colorbar(ax01)
+            #
+            ax10 = ax[1,0].imshow(self.n2, origin='lower')
+            ax[1,0].set_title('electron density')
+            plt.colorbar(ax10)
+            #
+            ax11 = ax[1,1].imshow(self.p2, origin='lower')
+            ax[1,1].set_title('hole density')
+            plt.colorbar(ax11)
+            #
+            plt.savefig(output_filename)
+            #
+            #plt.show()
+            plt.close()
             
 
 
@@ -789,7 +837,7 @@ class SOLVER(GRID):
 #
 
 # number of wls
-wl_ea = 5
+wl_ea = 1
 
 # material para
 mat_para_dictionary = {}
@@ -859,15 +907,28 @@ grid_solver.make_poisson_matrix()
 grid_solver.make_continuity_matrix()
 
 # poisson equation solver
-ext_bias = {10001:0.0, 10002:0.0}                                   # BL, SL ext. bias
-ext_bias.update({100:0.0, 101:0.0, 102:1.0, 103:0.0, 104:0.0})      # WL ext. bias
+ext_bias = {10001:0.01, 10002:0.0}                                           # BL, SL ext. bias
+ext_bias.update({100:0.5, 101:1.0, 102:1.0, 103:1.0, 104:1.0})              # WL ext. bias
 grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
 ctn_fixed_charge_density = {31:0.0e24}                                      # fixed charge
 grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
-grid_solver.solve_poisson_equation()
 
-# continuity equation solver
-grid_solver.make_N_P_matrix(dt=1e-10)
-grid_solver.solve_continuity_equation()
+# SG scheme
+timeline = np.linspace(0.0, 1e-10, 100)
+for index, each_time in enumerate(list(timeline)):
+    # calculating dt, elapsed time
+    if index == 0:
+        dt = each_time/2.0
+    else:
+        dt = each_time - timeline[index-1]
+    # output filename
+    output_filename = 'SG_scheme_dt_%.2e_elapsed_time_%.2e' % (dt, each_time)
+    print(output_filename)
+    # poission equation solver
+    grid_solver.solve_poisson_equation()
+    # continuity equation solver
+    grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename+'.png')
+
+
 
 
