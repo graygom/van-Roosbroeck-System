@@ -182,17 +182,7 @@ class GRID:
         # debugging
         if True:
             print('debugging > set_unit_cell_R_grid()')
-            for each_region in self.R.keys():
-                print(each_region, len(self.R[each_region]), \
-                      len(self.R_MAT_name[each_region]), len(self.R_MAT_mis[each_region]), \
-                      len(self.R_MAT_ep[each_region]), len(self.R_MAT_no[each_region]))
-                #print(self.R[each_region])
-                #print(self.R_MAT_name[each_region])
-                #print(self.R_MAT_mis[each_region])
-                #print(self.R_MAT_ep[each_region])
-                #print(self.R_MAT_no[each_region])
-                #plt.plot(self.R[each_region][1:],self.R_MAT_no[each_region],'o-')
-                #plt.show()
+            print(self.R.keys())
 
     # ===== setting unit cell Z direction grid (angstrom) =====
     def set_unit_cell_Z_grid(self, z_on_thk_dz, z_offset):
@@ -251,6 +241,7 @@ class GRID:
 
         # sparse matrix size
         self.RZ_nodes_len = self.R_nodes_len * self.Z_nodes_len
+        self.RZ_elmts_len = self.R_elmts_len * self.Z_elmts_len
         
         # 2D array
         self.RZ_R = np.zeros([self.R_nodes_len, self.Z_nodes_len])
@@ -283,36 +274,60 @@ class GRID:
             print('debugging > set_unit_cell_RZ_grid()')
             print(self.RZ_R.shape)
             print(self.RZ_Z.shape)
-            print(self.RZ_EP.shape)
+            print(self.RZ_EP.shape, set(self.RZ_EP.reshape(-1)) )
+            print(self.RZ_MATno.shape, set(self.RZ_MATno.reshape(-1)) )
 
     # ===== setting metal-insulator-semiconductor region =====
     def set_unit_cell_RZ_mis_region(self):
         #
         self.RZ_MIS = {}
 
+        # making edge points set
+        edge_points_set = set()
+        for each_r in range(self.R_nodes_len):
+            edge_points_set.add( (each_r, 0) )
+            edge_points_set.add( (each_r, self.Z_nodes_len-1) )
+        for each_z in range(self.Z_nodes_len):
+            edge_points_set.add( (0, each_z) )
+            edge_points_set.add( (self.R_nodes_len-1, each_z) )
+
         # sweep mat_mis keys
         for each_mat_mis in self.MIS_MAT_no.keys():
             # check each mat_mis key
             if each_mat_mis not in self.RZ_MIS.keys():
-                # if not, make mat_mis key
                 self.RZ_MIS[each_mat_mis] = {}
+            # sweep mat_no list
+            for each_mat_no in self.MIS_MAT_no[each_mat_mis]:
                 # check each mat_no array
-                for each_mat_no in self.MIS_MAT_no[each_mat_mis]:
-                    # if not, make mat_no set
+                if each_mat_no not in self.RZ_MIS[each_mat_mis].keys():
                     self.RZ_MIS[each_mat_mis][each_mat_no] = set()
-                    # sweep RZ coordinate
-                    for each_z_elmt in range(self.Z_elmts_len):
-                        for each_r_elmt in range(self.R_elmts_len):
-                            # check RZ coordinate
-                            if (self.Z_MAT_mis[each_z_elmt][each_r_elmt] == each_mat_mis) and (self.Z_MAT_no[each_z_elmt][each_r_elmt] == each_mat_no):
-                                self.RZ_MIS[each_mat_mis][each_mat_no].add( (each_r_elmt+0, each_z_elmt+0) )     # element
-                                self.RZ_MIS[each_mat_mis][each_mat_no].add( (each_r_elmt+1, each_z_elmt+0) )     # adding node
-                                self.RZ_MIS[each_mat_mis][each_mat_no].add( (each_r_elmt+0, each_z_elmt+1) )     # adding node
-                                self.RZ_MIS[each_mat_mis][each_mat_no].add( (each_r_elmt+1, each_z_elmt+1) )     # adding node
+                # check self.RZ_MATno
+                r_index_array, z_index_array = np.where( self.RZ_MATno == each_mat_no )
+                # distributing each point 
+                for each_point in range(len(r_index_array)):
+                    # nodes
+                    self.RZ_MIS[each_mat_mis][each_mat_no].add( ( r_index_array[each_point]+0, z_index_array[each_point]+0 ) )
+                    self.RZ_MIS[each_mat_mis][each_mat_no].add( ( r_index_array[each_point]+0, z_index_array[each_point]+1 ) )
+                    self.RZ_MIS[each_mat_mis][each_mat_no].add( ( r_index_array[each_point]+1, z_index_array[each_point]+0 ) )
+                    self.RZ_MIS[each_mat_mis][each_mat_no].add( ( r_index_array[each_point]+1, z_index_array[each_point]+1 ) )
 
+        # set difference: I - edge points set
+        for tg_mat_no in self.MIS_MAT_no['I']:
+            self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(edge_points_set)
+        
+        # set difference: I - M (electrodes)
+        for tg_mat_no in self.MIS_MAT_no['I']:
+            for diff_mat_no in self.MIS_MAT_no['M']:
+                self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(self.RZ_MIS['M'][diff_mat_no])
+        # set difference: I - S (semiconductors)
+        for tg_mat_no in self.MIS_MAT_no['I']:
+            for diff_mat_no in self.MIS_MAT_no['S']:
+                self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(self.RZ_MIS['S'][diff_mat_no])
+                    
         # debugging
         if True:
             print('debugging > set_unit_cell_RZ_mis_region()')
+            print(self.RZ_nodes_len, self.RZ_elmts_len)
             for each_mat_mis in self.RZ_MIS.keys():
                 for each_mat_no in self.RZ_MIS[each_mat_mis]:
                     print(each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no]))
@@ -346,6 +361,153 @@ class GRID:
             print('debugging > add_ohmic_contact()')
             print(before_mat_mis, before_mat_no, before_z_coord)
             print(len(self.RZ_MIS[before_mat_mis][before_mat_no]), -len(self.RZ_MIS[after_mat_mis][after_mat_no]))
+
+    # ===== setting semiconductor parameters =====
+    def set_semiconductor_parameters(self, op_temperature, tg_region, bl_mat_no, sl_mat_no, doping):
+        # operating temperature (initialization)
+        self.TEMP = op_temperature + 273.15             # celsius -> kelvin
+        self.Vtm = self.kb * self.TEMP / self.q
+
+        # semicondutor region (initialization)
+        tg_mat_mis = list(tg_region.keys())[0]
+        tg_mat_no  = tg_region[tg_mat_mis]['mat_no']
+        tg_points  = list(self.RZ_MIS[tg_mat_mis][tg_mat_no])
+        bl_points  = list(self.RZ_MIS['M'][bl_mat_no])
+        sl_points  = list(self.RZ_MIS['M'][sl_mat_no])
+        bl_sl_points = bl_points +sl_points
+
+        # doping profile (initialization)
+        self.DP  = np.zeros(self.RZ_nodes_len)
+        dopant_type = doping[0]                     # 'n' or 'p'
+        dopant_density = doping[1]                  # [m]^-3
+        for each_point in (tg_points+bl_sl_points):
+            r_node, z_node = each_point
+            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)
+            if dopant_type =='n':
+                self.DP[index_r_z] = +dopant_density        # ionized
+            elif dopant_type =='p':
+                self.DP[index_r_z] = -dopant_density        # ionized
+            else:
+                print('set_semiconductor_parameters() > invalid dopant type')
+
+        # free carrier density, built-in potential (initialization)
+        n_int = self.MAT['SI']['n_int']
+        self.n1  = ( np.sqrt( self.DP**2 + 4.0*n_int**2 ) + self.DP ) / 2
+        self.p1  = ( np.sqrt( self.DP**2 + 4.0*n_int**2 ) - self.DP ) / 2
+        self.Vbi = self.Vtm * np.log( ( self.DP + np.sqrt( self.DP**2 + 4.0*n_int**2 ) ) / ( 2.0 * n_int ) )
+
+        # coefficient of continuity equation matrix (initialization)
+        self.CM = {}
+        
+        # STEP1: check neighbor points
+        r_nodes = set()
+        z_nodes = set()
+        for each_point in tg_points:
+            #
+            each_r_node, each_z_node = each_point
+            r_nodes.add(each_r_node)
+            z_nodes.add(each_z_node)
+            # making key
+            if each_point not in self.CM.keys():
+                self.CM[each_point] = {}
+            # check r-1, z
+            if (each_r_node-1, each_z_node) in tg_points:
+                self.CM[each_point]['rm1_z'] = {}
+                self.CM[each_point]['rm1_z']['index'] = self.R_nodes_len * (each_z_node+0) + (each_r_node-1)
+                self.CM[each_point]['rm1_z']['mu_n'] = self.MAT['SI']['mu_n']
+                self.CM[each_point]['rm1_z']['mu_p'] = self.MAT['SI']['mu_p']
+                R_r_z     = self.RZ_R[each_r_node+0, each_z_node+0]
+                dR_rm1_z  = self.RZ_R[each_r_node+0, each_z_node+0] - self.RZ_R[each_r_node-1, each_z_node+0]
+                self.CM[each_point]['rm1_z']['geometry'] = ( R_r_z - dR_rm1_z/2.0 ) / R_r_z
+                self.CM[each_point]['rm1_z']['dR'] = dR_rm1_z
+                self.CM[each_point]['rm1_z']['dR2'] = dR_rm1_z/2.0
+            # check r+1, z
+            if (each_r_node+1, each_z_node) in tg_points:
+                self.CM[each_point]['rp1_z'] = {}
+                self.CM[each_point]['rp1_z']['index'] = self.R_nodes_len * (each_z_node+0) + (each_r_node+1)
+                self.CM[each_point]['rp1_z']['mu_n'] = self.MAT['SI']['mu_n']
+                self.CM[each_point]['rp1_z']['mu_p'] = self.MAT['SI']['mu_p']
+                R_r_z     = self.RZ_R[each_r_node+0, each_z_node+0]
+                dR_rp1_z  = self.RZ_R[each_r_node+1, each_z_node+0] - self.RZ_R[each_r_node+0, each_z_node+0]
+                self.CM[each_point]['rp1_z']['geometry'] = ( R_r_z + dR_rp1_z/2.0 ) / R_r_z
+                self.CM[each_point]['rp1_z']['dR'] = dR_rp1_z
+                self.CM[each_point]['rp1_z']['dR2'] = dR_rp1_z/2.0
+            # check r, z-1 (bl, sl)
+            if (each_r_node, each_z_node-1) in (tg_points+bl_sl_points):
+                self.CM[each_point]['r_zm1'] = {}
+                self.CM[each_point]['r_zm1']['index'] = self.R_nodes_len * (each_z_node-1) + (each_r_node+0)
+                self.CM[each_point]['r_zm1']['mu_n'] = self.MAT['SI']['mu_n']
+                self.CM[each_point]['r_zm1']['mu_p'] = self.MAT['SI']['mu_p']
+                Z_r_z     = self.RZ_Z[each_r_node+0, each_z_node+0]
+                dZ_r_zm1  = self.RZ_Z[each_r_node+0, each_z_node+0] - self.RZ_Z[each_r_node+0, each_z_node-1]
+                self.CM[each_point]['r_zm1']['geometry'] = 1.0
+                self.CM[each_point]['r_zm1']['dZ'] = dZ_r_zm1
+                self.CM[each_point]['r_zm1']['dZ2'] = dZ_r_zm1/2.0
+            # check r, z+1 (bl, sl)
+            if (each_r_node, each_z_node+1) in (tg_points+bl_sl_points):
+                self.CM[each_point]['r_zp1'] = {}
+                self.CM[each_point]['r_zp1']['index'] = self.R_nodes_len * (each_z_node+1) + (each_r_node+0)
+                self.CM[each_point]['r_zp1']['mu_n'] = self.MAT['SI']['mu_n']
+                self.CM[each_point]['r_zp1']['mu_p'] = self.MAT['SI']['mu_p']
+                Z_r_z     = self.RZ_Z[each_r_node+0, each_z_node+0]
+                dZ_r_zp1  = self.RZ_Z[each_r_node+0, each_z_node+1] - self.RZ_Z[each_r_node+0, each_z_node+0]
+                self.CM[each_point]['r_zp1']['geometry'] = 1.0
+                self.CM[each_point]['r_zp1']['dZ'] = dZ_r_zp1
+                self.CM[each_point]['r_zp1']['dZ2'] = dZ_r_zp1/2.0
+  
+        # STEP2: updating neighbor points
+        for each_point in tg_points:
+            #
+            each_r_node, each_z_node = each_point
+            each_point_neighbor = list(self.CM[each_point].keys())
+            # updating dR2
+            if ('rm1_z' in each_point_neighbor) and ('rp1_z' in each_point_neighbor):
+                new_dR2 = self.CM[each_point]['rm1_z']['dR2']+self.CM[each_point]['rp1_z']['dR2']
+                self.CM[each_point]['rm1_z']['dR2'] = new_dR2
+                self.CM[each_point]['rp1_z']['dR2'] = new_dR2
+            # updating dZ2
+            if ('r_zm1' in each_point_neighbor) and ('r_zp1' in each_point_neighbor):
+                new_dZ2 = self.CM[each_point]['r_zm1']['dZ2']+self.CM[each_point]['r_zp1']['dZ2']
+                self.CM[each_point]['r_zm1']['dZ2'] = new_dZ2
+                self.CM[each_point]['r_zp1']['dZ2'] = new_dZ2
+            # check r-1, z
+            if (each_r_node-1, each_z_node) in tg_points:
+                self.CM[each_point]['rm1_z']['n_CM_coeff']  = self.Vtm * self.CM[each_point]['rm1_z']['mu_n'] * self.CM[each_point]['rm1_z']['geometry']
+                self.CM[each_point]['rm1_z']['n_CM_coeff'] /= (self.CM[each_point]['rm1_z']['dR'] * self.CM[each_point]['rm1_z']['dR2'])
+                self.CM[each_point]['rm1_z']['p_CM_coeff']  = self.Vtm * self.CM[each_point]['rm1_z']['mu_p'] * self.CM[each_point]['rm1_z']['geometry']
+                self.CM[each_point]['rm1_z']['p_CM_coeff'] /= (self.CM[each_point]['rm1_z']['dR'] * self.CM[each_point]['rm1_z']['dR2'])
+            # check r+1, z
+            if (each_r_node+1, each_z_node) in tg_points:
+                self.CM[each_point]['rp1_z']['n_CM_coeff']  = self.Vtm * self.CM[each_point]['rp1_z']['mu_n'] * self.CM[each_point]['rp1_z']['geometry']
+                self.CM[each_point]['rp1_z']['n_CM_coeff'] /= (self.CM[each_point]['rp1_z']['dR'] * self.CM[each_point]['rp1_z']['dR2'])
+                self.CM[each_point]['rp1_z']['p_CM_coeff']  = self.Vtm * self.CM[each_point]['rp1_z']['mu_p'] * self.CM[each_point]['rp1_z']['geometry']
+                self.CM[each_point]['rp1_z']['p_CM_coeff'] /= (self.CM[each_point]['rp1_z']['dR'] * self.CM[each_point]['rp1_z']['dR2'])
+            # check r, z-1 (bl, sl)
+            if (each_r_node, each_z_node-1) in (tg_points+bl_sl_points):
+                self.CM[each_point]['r_zm1']['n_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zm1']['mu_n']
+                self.CM[each_point]['r_zm1']['n_CM_coeff'] /= (self.CM[each_point]['r_zm1']['dZ'] * self.CM[each_point]['r_zm1']['dZ2'])
+                self.CM[each_point]['r_zm1']['p_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zm1']['mu_p']
+                self.CM[each_point]['r_zm1']['p_CM_coeff'] /= (self.CM[each_point]['r_zm1']['dZ'] * self.CM[each_point]['r_zm1']['dZ2'])
+            # check r, z+1 (bl, sl)
+            if (each_r_node, each_z_node+1) in (tg_points+bl_sl_points):
+                self.CM[each_point]['r_zp1']['n_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zp1']['mu_n']
+                self.CM[each_point]['r_zp1']['n_CM_coeff'] /= (self.CM[each_point]['r_zp1']['dZ'] * self.CM[each_point]['r_zp1']['dZ2'])
+                self.CM[each_point]['r_zp1']['p_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zp1']['mu_p']
+                self.CM[each_point]['r_zp1']['p_CM_coeff'] /= (self.CM[each_point]['r_zp1']['dZ'] * self.CM[each_point]['r_zp1']['dZ2'])
+        
+        # debugging
+        if True:
+            print('set_semiconductor_parameters()')
+            print('thermal voltage = %.3f V' % self.Vtm)
+            print('semiconductor region = %i [ea]' % len(tg_points))
+            print('r nodes = %i [ea] z nodes = %i [ea]' % (len(r_nodes), len(z_nodes)))
+            print('r nodes = %s' % (r_nodes))
+            print('z nodes = %.1f ~ %.1f' % (np.min(list(z_nodes)), np.max(list(z_nodes))))
+
+        # debugging
+        if True:
+            for each_tuple in [(72,1), (86,1), (72,449), (86,449), (73,1)]:
+                print(each_tuple, self.CM[each_tuple])
         
     # ===== making poisson matrix  =====
     def make_poisson_matrix(self):
@@ -397,8 +559,8 @@ class GRID:
                         self.PM[index_r_z, index_rm1_z] = -1.0
 
         # inside boundary conditions
-        for each_r in range(1, self.R_nodes_len):
-            for each_z in range(1, self.Z_nodes_len):
+        for each_r in range(1, self.R_nodes_len-1):
+            for each_z in range(1, self.Z_nodes_len-1):
                 # 1D serialization index
                 index_r_z   = self.R_nodes_len * (each_z+0) + (each_r+0)
                 index_rm1_z = self.R_nodes_len * (each_z+0) + (each_r-1)
@@ -408,26 +570,26 @@ class GRID:
                 # except metal contacts & boundary conditions
                 if self.PM[index_r_z, index_r_z] != 1:
                     # geometry factors in r direction
-                    geometry_effect_rm1_z  = self.RZ_R[each_r+0,each_z+0] - ( self.RZ_R[each_r+0,each_z+0] - self.RZ_R[each_r-1,each_z+0] ) / 2.0 
-                    geometry_effect_rm1_z /= self.RZ_R[each_r+0,each_z+0]
-                    geometry_effect_rp1_z  = self.RZ_R[each_r+0,each_z+0] + ( self.RZ_R[each_r+1,each_z+0] - self.RZ_R[each_r+0,each_z+0] ) / 2.0 
-                    geometry_effect_rp1_z /= self.RZ_R[each_r+0,each_z+0]
+                    geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
+                    geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
+                    geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
+                    geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
                     geometry_effect_r_zm1  = 1.0
                     geometry_effect_r_zp1  = 1.0
                     # 2nd derivatives
-                    geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0] - self.RZ_R[each_r-1,each_z+0])
-                    geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0] - self.RZ_R[each_r-1,each_z+0])/2.0
-                    geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0] - self.RZ_R[each_r+0,each_z+0])
-                    geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0] - self.RZ_R[each_r-1,each_z+0])/2.0
-                    geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+0] - self.RZ_Z[each_r+0,each_z-1])
-                    geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+1] - self.RZ_Z[each_r+0,each_z-1])/2.0
-                    geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1] - self.RZ_Z[each_r+0,each_z+0])
-                    geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1] - self.RZ_Z[each_r+0,each_z-1])/2.0
+                    geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
+                    geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                    geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
+                    geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                    geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+0]-self.RZ_Z[each_r+0,each_z-1])
+                    geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                    geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
+                    geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
                     # electric permittivity
-                    ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1] + self.RZ_EP[each_r-1,each_z+0]) / 2.0
-                    ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1] + self.RZ_EP[each_r+0,each_z+0]) / 2.0
-                    ep_r_avg_zm1 = (self.RZ_EP[each_r-1,each_z-1] + self.RZ_EP[each_r+0,each_z-1]) / 2.0
-                    ep_r_avg_zp1 = (self.RZ_EP[each_r-1,each_z+0] + self.RZ_EP[each_r+0,each_z+0]) / 2.0
+                    ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z+0])/2.0
+                    ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                    ep_r_avg_zm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
+                    ep_r_avg_zp1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
                     # elements
                     pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
                     pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
@@ -455,6 +617,25 @@ class GRID:
             for each_mat_no in self.RZ_MIS['M'].keys():
                 print('M', each_mat_no, len(self.RZ_MIS['M'][each_mat_no]))
 
+    # ===== making continuity matrix  =====
+    def make_continuity_matrix(self):
+        # making sparse matrix
+        self.N = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
+        self.P = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
+
+        # identity
+        for each_z in range(self.Z_nodes_len):
+            for each_r in range(self.R_nodes_len):
+                # 1D serialization index
+                index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
+                # identity
+                self.N[index_r_z, index_r_z] = 1.0
+                self.P[index_r_z, index_r_z] = 1.0
+
+        # CSR format
+        self.Ncsr = self.N.tocsr()
+        self.Pcsr = self.P.tocsr()
+
 
 #
 # CLASS: SOLVER (sparse matrix solver)
@@ -467,6 +648,7 @@ class SOLVER(GRID):
         # sweep
         for each_mat_mis in ['M']:
             for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                print('make_external_bias_vector() %s mat_o = %i, points = %i ea' % (each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no])) )
                 for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
                     # 1D serialization index
                     index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
@@ -480,6 +662,7 @@ class SOLVER(GRID):
             for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
                 # check
                 if each_mat_no in fixed_charge_density.keys():
+                    print('make_fixed_charge_vector() %s mat_o = %i, points = %i ea' % (each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no])))
                     for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
                         # 1D serialization index
                         index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
@@ -487,21 +670,115 @@ class SOLVER(GRID):
                         self.FC[index_r_z] = fixed_charge_density[each_mat_no]
 
     # ===== solving poisson equation  =====
-    def solve_poisson_equation(self):
-        # sparse matrix solver
-        self.V1 = sc.sparse.linalg.spsolve(self.PMcsr, self.EB + self.q*(self.FC))
-
-        # post processing
+    def solve_poisson_equation(self):       
+        # sparse matrix solver for poisson equation
+        self.V1 = sc.sparse.linalg.spsolve(self.PMcsr, self.EB + self.q*(self.FC + self.p1 - self.n1 + self.DP) )
         self.V2 = self.V1.reshape(self.Z_nodes_len, self.R_nodes_len).T
-        self.Er = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.RZ_dR
-        self.Ez = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.RZ_dZ
-        self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 ) 
+        
+        # post processing 1 for continuity equations
+        self.dVr_f = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.Vtm
+        self.dVr_b = ( self.V2[:-1,:] - self.V2[1:,:] ) / self.Vtm
+        self.dVz_f = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.Vtm
+        self.dVz_b = ( self.V2[:,:-1] - self.V2[:,1:] ) / self.Vtm
+
+        # post processing 2 for continuity equations
+        B_tol = 1e-10
+        self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f) - 1.0 ), 1.0)
+        self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b) - 1.0 ), 1.0)
+        self.Bz_f = np.where( np.abs(self.dVz_f) > B_tol, self.dVz_f / ( np.exp(self.dVz_f) - 1.0 ), 1.0)
+        self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b) - 1.0 ), 1.0)
 
         # debugging
         if True:
-            fig, ax = plt.subplots(2,1)
-            ax[0].imshow(self.V2, origin='lower')
-            ax[1].imshow(self.E, origin='lower')
+            print('poisson solver: V = [%.2f, %.2f]' % ( np.min(self.V1), np.max(self.V1) ) )
+            print('poisson solver: EB = [%.2f, %.2f]' % ( np.min(self.EB), np.max(self.EB) ) )
+            print('poisson solver: FC = [%.2e, %.2e]' % ( np.min(self.FC), np.max(self.FC) ) )
+        
+        # debugging
+        if True:
+            self.Er = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.RZ_dR
+            self.Ez = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.RZ_dZ
+            self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
+            self.FC2 = self.FC.reshape(self.Z_nodes_len, self.R_nodes_len).T
+            self.EB2 = self.EB.reshape(self.Z_nodes_len, self.R_nodes_len).T
+        
+            fig, ax = plt.subplots(2, 2)
+            ax[0,0].imshow(self.V2, origin='lower')
+            ax[0,1].imshow(self.E, origin='lower')
+            ax[1,0].imshow(self.Er, origin='lower')
+            ax[1,1].imshow(self.Ez, origin='lower')
+            plt.show()
+
+    # ===== making N P matrix  =====
+    def make_N_P_matrix(self, dt):
+        # making sparse matrix
+        self.dN = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
+        self.dP = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
+
+        # sweep target points
+        for each_point in self.CM.keys():
+            #
+            each_r, each_z = each_point
+            tg_index = self.R_nodes_len * each_z + each_r
+            # sweep neighbor points
+            for neighbor_point in self.CM[each_point].keys():
+                #
+                neighbor_index = self.CM[each_point][neighbor_point]['index']
+                n_CM_coeff = self.CM[each_point][neighbor_point]['n_CM_coeff']
+                p_CM_coeff = self.CM[each_point][neighbor_point]['p_CM_coeff']
+                #
+                if neighbor_point == 'rm1_z':   
+                    #
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_f[ each_r-1, each_z+0 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_b[ each_r-1, each_z+0 ] * dt
+                    #
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_b[ each_r-1, each_z+0 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_f[ each_r-1, each_z+0 ] * dt
+                #
+                if neighbor_point == 'rp1_z':   
+                    #
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_b[ each_r+0, each_z+0 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_f[ each_r+0, each_z+0 ] * dt
+                    #
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_f[ each_r+0, each_z+0 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_b[ each_r+0, each_z+0 ] * dt
+                #
+                if neighbor_point == 'r_zm1':   
+                    #
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ] * dt
+                    #
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ] * dt
+                #
+                if neighbor_point == 'r_zp1':   
+                    #
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ] * dt
+                    #
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ] * dt
+
+        # CSR format
+        self.dNcsr = self.dN.tocsr()
+        self.dPcsr = self.dP.tocsr()
+
+    # ===== solving continuity equation  =====
+    def solve_continuity_equation(self):       
+        # sparse matrix solver for continuity equation
+        self.n1 = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 )
+        self.p1 = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 )
+
+        # debugging
+        if True:
+            self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
+            self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T
+
+            fig, ax = plt.subplots(2, 2)
+            ax[0,0].imshow(self.V2, origin='lower')
+            ax[0,1].imshow(self.E, origin='lower')
+            ax[1,0].imshow(self.n2, origin='lower')
+            ax[1,1].imshow(self.p2, origin='lower')
             plt.show()
     
             
@@ -568,7 +845,7 @@ for each_wl in range(wl_ea):
     uc_outward_thk_dr[each_wl_name+'_ON_O2']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
     uc_z_on_thk_dz[   each_wl_name+'_ON_O2'] = {'thk':95.0,  'dz':5.0}   # angstrom
 
-#
+# preparing grid
 grid_solver = SOLVER()
 grid_solver.add_material_parameters(mat_para_dictionary)
 grid_solver.set_unit_cell_R_grid(inward_thk_dr=uc_inward_thk_dr, outward_thk_dr=uc_outward_thk_dr)
@@ -577,11 +854,20 @@ grid_solver.set_unit_cell_RZ_grid()
 grid_solver.set_unit_cell_RZ_mis_region()
 grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
 grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
+grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e20])
 grid_solver.make_poisson_matrix()
+grid_solver.make_continuity_matrix()
 
-#
-ext_bias = {10001:0.0, 10002:0.0, 100:0.0, 101:0.0, 102:1.0, 103:0.0, 104:0.0}
+# poisson equation solver
+ext_bias = {10001:0.0, 10002:0.0}                                   # BL, SL ext. bias
+ext_bias.update({100:0.0, 101:0.0, 102:1.0, 103:0.0, 104:0.0})      # WL ext. bias
 grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
-ctn_fixed_charge_density = {20:0.0e24}
+ctn_fixed_charge_density = {31:0.0e24}                                      # fixed charge
 grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
 grid_solver.solve_poisson_equation()
+
+# continuity equation solver
+grid_solver.make_N_P_matrix(dt=1e-10)
+grid_solver.solve_continuity_equation()
+
+
