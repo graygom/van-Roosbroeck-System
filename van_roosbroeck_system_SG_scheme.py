@@ -837,7 +837,7 @@ class SOLVER(GRID):
 #
 
 # number of wls
-wl_ea = 1
+wl_ea = 5
 
 # material para
 mat_para_dictionary = {}
@@ -907,14 +907,14 @@ grid_solver.make_poisson_matrix()
 grid_solver.make_continuity_matrix()
 
 # poisson equation solver
-ext_bias = {10001:0.01, 10002:0.0}                                           # BL, SL ext. bias
-ext_bias.update({100:0.5, 101:1.0, 102:1.0, 103:1.0, 104:1.0})              # WL ext. bias
+ext_bias = {10001:0.0, 10002:0.0}                                           # BL, SL ext. bias
+ext_bias.update({100:0.2, 101:0.2, 102:0.2, 103:0.2, 104:0.2})              # WL ext. bias
 grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
 ctn_fixed_charge_density = {31:0.0e24}                                      # fixed charge
 grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
 
 # SG scheme
-timeline = np.linspace(0.0, 1e-10, 100)
+timeline = np.linspace(0.0, 1e-8, 1000)
 for index, each_time in enumerate(list(timeline)):
     # calculating dt, elapsed time
     if index == 0:
@@ -922,7 +922,7 @@ for index, each_time in enumerate(list(timeline)):
     else:
         dt = each_time - timeline[index-1]
     # output filename
-    output_filename = 'SG_scheme_dt_%.2e_elapsed_time_%.2e' % (dt, each_time)
+    output_filename = 'SG_scheme_%05i_elapsed_time_%.2e_dt_%.2e' % (index, dt, each_time)
     print(output_filename)
     # poission equation solver
     grid_solver.solve_poisson_equation()
