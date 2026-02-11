@@ -63,7 +63,7 @@ class GRID:
             self.MIS_MAT_no[mat_mis].append(mat_no)
 
         # debugging
-        if True:
+        if False:
             print('debugging > add_material_parameters()')
             print(self.MIS_MAT_no)
     
@@ -180,7 +180,7 @@ class GRID:
             self.R_MAT_no[each_region] = self.R_IN_MAT_no + self.R_OUT_MAT_no[each_region]          # element
 
         # debugging
-        if True:
+        if False:
             print('debugging > set_unit_cell_R_grid()')
             print(self.R.keys())
 
@@ -221,7 +221,7 @@ class GRID:
                 self.Z_MAT_no.append( self.R_MAT_no[each_region] )          # element
  
         # debugging
-        if True:
+        if False:
             print('debugging > set_unit_cell_Z_grid()')
             print(len(self.Z), len(self.Z_REGION))
             #print(set(self.Z))
@@ -270,7 +270,7 @@ class GRID:
             self.RZ_MATno[:,each_z_elmt] = copy.copy( self.Z_MAT_no[each_z_elmt] )
 
         # debugging
-        if True:
+        if False:
             print('debugging > set_unit_cell_RZ_grid()')
             print(self.RZ_R.shape)
             print(self.RZ_Z.shape)
@@ -325,7 +325,7 @@ class GRID:
                 self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(self.RZ_MIS['S'][diff_mat_no])
                     
         # debugging
-        if True:
+        if False:
             print('debugging > set_unit_cell_RZ_mis_region()')
             print(self.RZ_nodes_len, self.RZ_elmts_len)
             for each_mat_mis in self.RZ_MIS.keys():
@@ -357,7 +357,7 @@ class GRID:
         self.RZ_MIS[after_mat_mis][after_mat_no] = self.RZ_MIS[after_mat_mis][after_mat_no].union(add_nodes)
 
         # debugging
-        if True:
+        if False:
             print('debugging > add_ohmic_contact()')
             print(before_mat_mis, before_mat_no, before_z_coord)
             print(len(self.RZ_MIS[before_mat_mis][before_mat_no]), -len(self.RZ_MIS[after_mat_mis][after_mat_no]))
@@ -503,7 +503,7 @@ class GRID:
                 self.CM[each_point]['r_zp1']['p_CM_coeff'] /= (self.CM[each_point]['r_zp1']['dZ'] * self.CM[each_point]['r_zp1']['dZ2'])
         
         # debugging
-        if True:
+        if False:
             print('set_semiconductor_parameters()')
             print('thermal voltage = %.3f V' % self.Vtm)
             print('semiconductor region = %i [ea]' % len(tg_points))
@@ -619,7 +619,7 @@ class GRID:
         self.FC = np.zeros(self.RZ_nodes_len)
 
         # debugging
-        if True:
+        if False:
             print('debugging > make_poisson_matrix()')
             for each_mat_no in self.RZ_MIS['M'].keys():
                 print('M', each_mat_no, len(self.RZ_MIS['M'][each_mat_no]))
@@ -655,7 +655,7 @@ class SOLVER(GRID):
         # sweep
         for each_mat_mis in ['M']:
             for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
-                print('make_external_bias_vector() %s mat_no = %i, points = %i ea' % (each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no])) )
+                #print('make_external_bias_vector() %s mat_no = %i, points = %i ea' % (each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no])) )
                 for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
                     # 1D serialization index
                     index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
@@ -673,7 +673,7 @@ class SOLVER(GRID):
             for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
                 # check
                 if each_mat_no in fixed_charge_density.keys():
-                    print('make_fixed_charge_vector() %s mat_o = %i, points = %i ea' % (each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no])))
+                    #print('make_fixed_charge_vector() %s mat_o = %i, points = %i ea' % (each_mat_mis, each_mat_no, len(self.RZ_MIS[each_mat_mis][each_mat_no])))
                     for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
                         # 1D serialization index
                         index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
@@ -703,7 +703,7 @@ class SOLVER(GRID):
         self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b) - 1.0 ), 1.0)
 
         # debugging
-        if True:
+        if False:
             print('poisson solver: V = [%.2f, %.2f]' % ( np.min(self.V1), np.max(self.V1) ) )
         
         # debugging
@@ -778,37 +778,17 @@ class SOLVER(GRID):
         self.make_N_P_matrix(dt)
         
         # sparse matrix solver for continuity equation
-        self.n1_new = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 )
-        self.p1_new = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 )
+        self.n1 = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 )
+        self.p1 = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 )
 
-        # calculating current
-        dn1 = self.n1_new - self.n1
-        dp1 = self.p1_new - self.p1
-        Jz_n_bl = 0.0
-        Jz_p_bl = 0.0
-        for each_r, each_z in list(self.RZ_MIS['M'][10001]):
-            index_r_zp1 = self.R_nodes_len * (each_z+1) + each_r
-            perimeter = (2.0 * np.pi * self.RZ_R[each_r, each_z])
-            area = self.RZ_dZ[each_r, each_z] * self.RZ_dR[each_r, each_z]
-            volume = perimeter * area
-            Jz_n_bl += self.q * dn1[index_r_zp1] * volume / dt
-            Jz_p_bl += self.q * dp1[index_r_zp1] * volume / dt
-        self.n1 = self.n1_new
-        self.p1 = self.p1_new
-        print('Jz_n_bl = %.2e, Jz_p_bl = %.2e' % (Jz_n_bl, Jz_p_bl) )
+        # 2D visualization 
+        self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
+        self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T
         
         # debugging
-        if True:
-            print('continuity solver: n = [%.3e, %.3e], p = [%.3e, %.3e]' % \
-                  ( np.min(self.n1), np.max(self.n1), np.min(self.p1), np.max(self.p1)  ) )
-
-        # debugging
         if output_filename != False:
-            # 2D visualization 
-            self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
-            self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T
             #
-            fig, ax = plt.subplots(2, 2, figsize=(12,6))
+            fig, ax = plt.subplots(2, 2, figsize=(10,8))
             ax00 = ax[0,0].imshow(self.V2, origin='lower')
             ax[0,0].set_title('electric potential')
             plt.colorbar(ax00)
@@ -827,9 +807,33 @@ class SOLVER(GRID):
             #
             plt.savefig(output_filename)
             #
-            #plt.show()
             plt.close()
-            
+
+    # ===== calculating BL current  =====
+    def cal_bl_current(self, bl_mat_no):
+        # initialization
+        In_bl = 0.0
+        Ip_bl = 0.0
+        # get BL ohmic contact points list
+        bl_points  = list(self.RZ_MIS['M'][bl_mat_no])
+        # check every BL ohmic contact points
+        for each_r_index, each_z_index in bl_points:
+            # calculate perimeter
+            perimeter = 2.0 * np.pi * self.RZ_R[each_r_index, each_z_index]
+            # calculate area
+            area = perimeter * self.RZ_dR[each_r_index, each_z_index]
+            # calculate Jn_bl, Jp_bl
+            Jn_bl  = +self.q * self.MAT['SI']['mu_n'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index]
+            Jn_bl *= ( self.Bz_f[each_r_index, each_z_index] * self.n2[each_r_index, each_z_index+1] - \
+                       self.Bz_b[each_r_index, each_z_index] * self.n2[each_r_index, each_z_index] )
+            Jp_bl  = -self.q * self.MAT['SI']['mu_p'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index]
+            Jp_bl *= ( self.Bz_b[each_r_index, each_z_index] * self.p2[each_r_index, each_z_index+1] - \
+                       self.Bz_f[each_r_index, each_z_index] * self.p2[each_r_index, each_z_index] )
+            # calculate I_bl, I_bl
+            In_bl += area * Jn_bl
+            Ip_bl += area * Jp_bl
+        # return
+        return [In_bl, Ip_bl]
 
 
 #
@@ -837,7 +841,7 @@ class SOLVER(GRID):
 #
 
 # number of wls
-wl_ea = 5
+wl_ea = 1
 
 # material para
 mat_para_dictionary = {}
@@ -906,28 +910,56 @@ grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'m
 grid_solver.make_poisson_matrix()
 grid_solver.make_continuity_matrix()
 
-# poisson equation solver
-ext_bias = {10001:0.0, 10002:0.0}                                           # BL, SL ext. bias
-ext_bias.update({100:0.2, 101:0.2, 102:0.2, 103:0.2, 104:0.2})              # WL ext. bias
-grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
-ctn_fixed_charge_density = {31:0.0e24}                                      # fixed charge
-grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
+# WL bias sweep
+WL_sweep_range = np.linspace(0.0, 2.0, 21)
 
-# SG scheme
-timeline = np.linspace(0.0, 1e-8, 1000)
-for index, each_time in enumerate(list(timeline)):
-    # calculating dt, elapsed time
-    if index == 0:
-        dt = each_time/2.0
-    else:
-        dt = each_time - timeline[index-1]
-    # output filename
-    output_filename = 'SG_scheme_%05i_elapsed_time_%.2e_dt_%.2e' % (index, dt, each_time)
-    print(output_filename)
-    # poission equation solver
-    grid_solver.solve_poisson_equation()
-    # continuity equation solver
-    grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename+'.png')
+for WL_bias in WL_sweep_range:
+    # CPU time
+    start = time.time()
+    
+    # poisson equation solver
+    ext_bias = {10001:0.0, 10002:0.0}                                                       # BL, SL ext. bias
+    ext_bias.update({100:WL_bias, 101:WL_bias, 102:WL_bias, 103:WL_bias, 104:WL_bias})      # WL ext. bias
+    grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
+    ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
+    grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
+
+    # injected charge
+    Qn_bl = 0.0
+    Qp_bl = 0.0
+
+    # SG scheme
+    timeline = np.linspace(1e-14, 1e-11, 201)
+    for index, each_time in enumerate(list(timeline)):
+        # calculating dt, elapsed time
+        if index == 0:
+            dt = each_time
+        else:
+            dt = each_time - timeline[index-1]
+        # output filename
+        if index % 100 == 0:
+            output_filename = 'SG_scheme_%05i_Vg_%.2f_elapsed_time_%.2e_dt_%.2e.png' % (index, WL_bias, each_time, dt)
+        else:
+            output_filename = False
+            
+        # poission equation solver
+        grid_solver.solve_poisson_equation()
+        # continuity equation solver
+        grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
+        
+        # calculate BL current
+        In_bl, Ip_bl = grid_solver.cal_bl_current(bl_mat_no=10001)
+        Qn_bl += In_bl * dt
+        Qp_bl += Ip_bl * dt
+        if index % 20 == 0:
+            output_string = '%i,%.2f,%.3e,%.3e,%.3e,%.3e' % (index, WL_bias, each_time, dt, Qn_bl, Qp_bl)
+            print(output_string)
+        
+    # CPU time
+    end = time.time()
+    output_string = '%.3f sec (%s),%.2f,%.3e' % (end-start, time.ctime(), WL_bias, Qn_bl)
+    print(output_string)
+
 
 
 
