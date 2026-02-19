@@ -30,7 +30,7 @@ class GRID:
         self.G  = {}    # grid information
         self.R  = []    # radius (node)
         self.M  = []    # material name (element)
-        self.EP = []    # electric permittivity (element)
+        self.K  = []    # dielectric constant (element)
         self.Q  = []    # charging flag (node)
         self.T  = []    # charging density (node)
         self.CB = []    # conduction band barrier height (element)
@@ -109,10 +109,10 @@ class GRID:
             #
             self.M += mat_array
 
-        # making EP, CB, VB, CE, VE (element)
+        # making K, CB, VB, CE, VE (element)
         for each_mat in self.M:
             #
-            self.EP.append(self.MAT[each_mat]['k'])
+            self.K.append(self.MAT[each_mat]['k'])
             self.CB.append(self.MAT[each_mat]['cb_bh'])
             self.VB.append(self.MAT[each_mat]['vb_bh'])
             self.CE.append(self.MAT[each_mat]['cb_meff'])
@@ -142,8 +142,8 @@ class GRID:
                 dR_inner = (R - R_inner)
                 dR_outer = (R_outer - R)
                 # electric perimittivity
-                EP_inner = self.EP[index-1] * self.ep0      # in SI
-                EP_outer = self.EP[index+0] * self.ep0      # in SI
+                EP_inner = self.K[index-1] * self.ep0       # in SI
+                EP_outer = self.K[index+0] * self.ep0       # in SI
                 # electric displacement
                 D_inner = EP_inner / dR_inner * ( R - dR_inner / 2.0 ) / R
                 D_outer = EP_outer / dR_outer * ( R + dR_outer / 2.0 ) / R
@@ -170,23 +170,58 @@ class GRID:
             #
             print(each_key, self.G[each_key])
 
-    def display_band_diagram(self):
+    def display_band_diagram(self, output_filename):
+        # preprocessing 1
+        r_node = self.R
+        v_node = self.V
+        t_node = self.T
+        # preprocessing 2
+        r_elmt = self.R[:-1]
+        v_elmt = self.V[:-1]
+        e_elmt = self.E
+        k_elmt = self.K
+        # preprocessing 3
+        cb_elmt = +np.array(self.CB) - v_elmt
+        vb_elmt = -np.array(self.VB) - v_elmt - 1.1
+        # preprocessing 4
+        dr_ch = r_node[1]  - r_node[0]
+        dr_wl = r_node[-1] - r_node[-2]
+        r_elmt_ext  = list(np.arange(r_node[0]-3*dr_ch, r_node[0], dr_ch)) + list(r_elmt) + \
+                      list(np.arange(r_node[-1]+dr_wl, r_node[-1]+4*dr_wl, dr_wl))
+        cb_elmt_ext = list([-self.EB[0]]*3) + list(cb_elmt) + list([-self.EB[-1]+(self.CH_E_AFF-self.WL_WF)]*3)
+        vb_elmt_ext = list([-self.EB[0]-1.1]*3) + list(vb_elmt) + list([-self.EB[-1]+(self.CH_E_AFF-self.WL_WF)]*3)
+        # preprocessing 5
+        r_elmt_ext2  = [r_elmt_ext[0], r_elmt_ext[-1]]
+        cb_tunneling = [0.0, 0.0]
+        vb_tunneling = [-1.1, -1.1]
         # visualization
-        fig, ax = plt.subplots(2, 2, figsize=(14,8))
-        ax[0,0].plot(self.R, self.V, 'o-')
+        fig, ax = plt.subplots(2, 3, figsize=(18,7))
+        ax[0,0].plot(r_node, v_node, 'o-')
         ax[0,0].grid(ls=':')
-        ax[0,0].set_title('electric potential [V]')
-        ax[0,1].plot(self.R[:-1], +np.array(self.CB)-self.V[:-1], 'o-')
-        ax[0,1].plot(self.R[:-1], -np.array(self.VB)-1.1-self.V[:-1], 'o-')
-        ax[0,1].set_title('band diagram [eV]')
-        ax[0,1].grid(ls=':')
-        ax[1,0].plot(self.R[:-1], self.E/1e8, 'o-')
-        ax[1,0].set_title('electric field [MV/cm]')
+        ax[0,0].set_ylabel('electric potential [V]')
+        ax[1,0].plot(r_elmt, e_elmt/1e8, 'o-')
+        ax[1,0].set_ylabel('electric field [MV/cm]')
+        ax[1,0].set_xlabel('radius [Angstrom]')
         ax[1,0].grid(ls=':')
-        ax[1,1].plot(self.R, self.T/1e6, 'o-')
-        ax[1,1].set_title('charge density [1/cm^3]')
+        ax[0,1].plot(r_elmt_ext, cb_elmt_ext, 'o-')
+        ax[0,1].plot(r_elmt_ext2, cb_tunneling, ':k')
+        ax[0,1].set_ylabel('conduction band diagram [eV]')
+        ax[0,1].grid(ls=':')
+        ax[1,1].plot(r_elmt_ext, vb_elmt_ext, 'o-')
+        ax[1,1].plot(r_elmt_ext2, vb_tunneling, ':k')
+        ax[1,1].set_ylabel('valence band diagram [eV]')
+        ax[1,1].set_xlabel('radius [Angstrom]')
         ax[1,1].grid(ls=':')
+        ax[0,2].plot(r_elmt, k_elmt, 'o-')
+        ax[0,2].set_ylabel('dielectric constant')
+        ax[0,2].grid(ls=':')
+        ax[1,2].plot(r_node, t_node/1e6, 'o-')
+        ax[1,2].set_ylabel('charge density [1/cm^3]')
+        ax[1,2].set_xlabel('radius [Angstrom]')
+        ax[1,2].grid(ls=':')
+        plt.savefig(output_filename)
         plt.show()
+        plt.close()
 
 
 #
@@ -198,7 +233,7 @@ class SOLVER(GRID):
     def solve_poission_equation(self, ch_bias, wl_bias):
         # updating external bias vector
         self.EB[0]  = ch_bias
-        self.EB[-1] = -wl_bias + (self.CH_E_AFF - self.WL_WF)            # Fermi line align
+        self.EB[-1] = wl_bias + (self.CH_E_AFF - self.WL_WF)            # Fermi line align
         # solve poisson equation
         self.V = sc.sparse.linalg.spsolve(self.PMcsr, self.EB + self.q * self.T)
         # electric field
@@ -227,10 +262,13 @@ grid_solver.add_dielectric_layer(mat_name='SIO2',  thk=68.0, dt=1.0, trap=False)
 grid_solver.add_dielectric_layer(mat_name='SI3N4', thk=44.0, dt=1.0, trap=True)     # in angstrom, CTN
 grid_solver.add_dielectric_layer(mat_name='SIO2',  thk=49.0, dt=1.0, trap=False)    # in angstrom, TOX
 grid_solver.make_unit_cell_structure()
-grid_solver.make_poission_matrix()
-grid_solver.set_trap_density(trap_density=-1.0e25)
-grid_solver.solve_poission_equation(ch_bias=0.0, wl_bias=0.0)
-grid_solver.display_band_diagram()
 grid_solver.display_grid_info()
+
+grid_solver.make_poission_matrix()
+grid_solver.set_trap_density(trap_density=+1.0e25)
+grid_solver.solve_poission_equation(ch_bias=0.0, wl_bias=10.0)
+grid_solver.display_band_diagram(output_filename='ctn_trap_model_test.pdf')
+
+
 
 
