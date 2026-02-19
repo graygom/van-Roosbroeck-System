@@ -24,6 +24,7 @@ class GRID:
     q = 1.60217663e-19      # electron charge, [C]
     kb = 1.380649e-23       # Boltzmann constant, [m]^2 [kg] [K]^-1 [s]^-2 
     ep0 = 8.854187e-12      # elelctric permittivity of free space, [F] [m]^-1
+    me = 9.1093837e-31      # electron mass, [kg]
     h = 6.62607015e-34      # Planck constant, [m]^2 [kg] [s]^-1
     hbar = h / (2.0*np.pi)
 
@@ -113,9 +114,6 @@ class GRID:
         self.R += [self.G['WL']]
         #
         self.R = np.array(self.R)
-
-        for index in range(len(self.R)):
-            print(index, self.R[index], self.Q[index], self.T[index], self.TT[index])
         
         # making M (element)
         for index, each_mat in enumerate(uc_mat):
@@ -303,6 +301,43 @@ class SOLVER(GRID):
         # electric field
         self.E = -(self.V[1:] - self.V[:-1]) / (self.R[1:] * 1e-10 - self.R[:-1] * 1e-10)
 
+    def calculate_tox_tunneling_probability(self):
+        # preprocessing 1
+        r_node = self.R
+        v_node = self.V
+        # preprocessing 2
+        r_elmt = self.R[:-1]
+        v_elmt = self.V[:-1]
+        # preprocessing 3
+        cb_elmt = np.array(self.CB) - v_elmt
+        vb_elmt = np.array(self.VB) + v_elmt
+        # 
+        self.TOX_TNL_PROB_CB = 0.0
+        self.TOX_TNL_PROB_CB_index = 0.0
+        self.TOX_TNL_PROB_VB = 0.0
+        self.TOX_TNL_PROB_VB_index = 0.0
+        # WKB approximation
+        wkb_approx_const = 2.0 / self.hbar
+        #
+        for index in range(len(self.TT)):
+            # TOX only
+            if (self.TT[index] == True) and (self.Q[index] == False):
+                # distance
+                dr = ( self.R[index+1] - self.R[index] ) * 1e-10
+                # conduction band electron Tunneling only
+                if cb_elmt[index] > 0.0:
+                    self.TOX_TNL_PROB_CB += np.sqrt( 2.0 * self.CE[index] * self.me * self.q * cb_elmt[index] ) * dr
+                    self.TOX_TNL_PROB_CB_index = index
+                # valence band electron Tunneling only
+                if vb_elmt[index] > 0.0:
+                    self.TOX_TNL_PROB_VB += np.sqrt( 2.0 * self.VE[index] * self.me * self.q * vb_elmt[index] ) * dr
+                    self.TOX_TNL_PROB_VB_index = index
+        #
+        self.TOX_TNL_PROB_CB = np.exp( -2.0 / self.hbar * self.TOX_TNL_PROB_CB)
+        self.TOX_TNL_PROB_VB = np.exp( -2.0 / self.hbar * self.TOX_TNL_PROB_VB)
+                    
+        # return
+        return [self.TOX_TNL_PROB_CB, self.TOX_TNL_PROB_CB_index, self.TOX_TNL_PROB_VB, self.TOX_TNL_PROB_VB_index]
 
 
 
@@ -334,11 +369,31 @@ grid_solver.make_unit_cell_structure(tox_n_profile=tox_n_profile)
 grid_solver.display_grid_info()
 
 grid_solver.make_poission_matrix()
-grid_solver.set_trap_density(trap_density=+0.6e25)
+grid_solver.set_trap_density(trap_density=+0.0e25)
 vt_shift = grid_solver.calculate_vt_shift()
-grid_solver.solve_poission_equation(ch_bias=0.0, wl_bias=14.0)
 
-grid_solver.display_band_diagram(output_filename='ctn_trap_model_test.pdf')
+vg_bias_array = np.arange(5.0, 18.1, 0.5)
+tox_cb_tunl_prob = []
+tox_cb_tunl_prob_index = []
+tox_vb_tunl_prob = []
+tox_vb_tunl_prob_index = []
+
+for each_vg_bias in vg_bias_array:
+    grid_solver.solve_poission_equation(ch_bias=0.0, wl_bias=each_vg_bias)
+    cb_tunl_prob, cb_tunl_index, vb_tunl_prob, vb_tunl_index = grid_solver.calculate_tox_tunneling_probability()
+    tox_cb_tunl_prob.append(cb_tunl_prob)
+    tox_vb_tunl_prob.append(vb_tunl_prob)
+    tox_cb_tunl_prob_index.append(cb_tunl_index)
+    tox_vb_tunl_prob_index.append(vb_tunl_index)
+    print(each_vg_bias, cb_tunl_prob, vb_tunl_prob, cb_tunl_index, vb_tunl_index)
+
+plt.semilogy(vg_bias_array, tox_cb_tunl_prob, 'o-')
+plt.grid(ls=':')
+plt.show()
+
+#grid_solver.display_band_diagram(output_filename='ctn_trap_model_test.pdf')
+
+
 
 
 
