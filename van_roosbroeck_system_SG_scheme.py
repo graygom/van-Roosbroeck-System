@@ -435,7 +435,9 @@ class GRID:
         self.p1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) - self.DP ) / 2
 
         # built-in potential (initialization)
-        self.Vbi = self.Vtm * np.log( ( self.DP + np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) ) / ( 2.0 * self.N_INT ) )
+        self.Vbi = np.where( self.N_INT != 0.0, \
+                             self.Vtm * np.log( ( self.DP + np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) ) / ( 2.0*self.N_INT ) ), \
+                             0.0 )      # 1D array
 
         # coefficient of continuity equation matrix (initialization)
         self.CM = {}
@@ -1144,16 +1146,58 @@ for each_wl in range(wl_ea):
 
 # preparing grid
 grid_solver = SOLVER()
-grid_solver.add_material_parameters(mat_para_dictionary)
-grid_solver.set_unit_cell_R_grid(inward_thk_dr=uc_inward_thk_dr, outward_thk_dr=uc_outward_thk_dr)
-grid_solver.set_unit_cell_Z_grid(z_on_thk_dz=uc_z_on_thk_dz, z_offset=0.0)
-grid_solver.set_unit_cell_RZ_grid()
-grid_solver.set_unit_cell_RZ_mis_region()
-grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
-grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
-grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e20])
-grid_solver.make_poisson_matrix()
-grid_solver.make_continuity_matrix()
+cpu_time_1 = grid_solver.add_material_parameters(mat_para_dictionary)
+cpu_time_2 = grid_solver.set_unit_cell_R_grid(inward_thk_dr=uc_inward_thk_dr, outward_thk_dr=uc_outward_thk_dr)
+cpu_time_3 = grid_solver.set_unit_cell_Z_grid(z_on_thk_dz=uc_z_on_thk_dz, z_offset=0.0)
+cpu_time_4 = grid_solver.set_unit_cell_RZ_grid()
+cpu_time_5 = grid_solver.set_unit_cell_RZ_mis_region()
+cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
+cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
+cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e20])
+cpu_time_9 = grid_solver.make_poisson_matrix()
+cpu_time_10 = grid_solver.make_continuity_matrix()
+
+# poisson equation solver
+ext_bias = {10001:0.0, 10002:0.0}                                                       # BL, SL ext. bias
+for each_wl in range(wl_ea):
+    each_wl_mat_no = 100 + each_wl
+    ext_bias.update({each_wl_mat_no:0.0})                                               # WL ext. bias
+cpu_time_11 = grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
+ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
+cpu_time_12 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
+cpu_time_13 = grid_solver.solve_poisson_equation()
+
+# FDM size
+print('FDM size')
+print('  R nodes = %i, Z nodes = %i' % (grid_solver.R_nodes_len, grid_solver.Z_nodes_len))
+print('  RZ nodes = %i (sparse matrix size)' % (grid_solver.RZ_nodes_len))
+
+# CPU time check
+print('CPU time check list')
+print('  %s %s %s threads' % (cpuinfo.get_cpu_info()['brand_raw'], platform.processor(), psutil.cpu_count(logical=True)))
+print('  @add_material_parameters() = %.1e sec' % cpu_time_1)
+print('  @set_unit_cell_R_grid() = %.1e sec' % cpu_time_2)
+print('  @set_unit_cell_Z_grid() = %.1e sec' % cpu_time_3)
+print('  @set_unit_cell_RZ_grid() = %.1e sec' % cpu_time_4)
+print('  @set_unit_cell_RZ_mis_region() = %.1e sec' % cpu_time_5)
+print('  @add_ohmic_contact() = %.1e sec' % cpu_time_6)
+print('  @add_ohmic_contact() = %.1e sec' % cpu_time_7)
+print('  @set_semiconductor_parameters() = %.1e sec' % cpu_time_8)
+print('  @make_poisson_matrix() = %.1e sec' % cpu_time_9)
+print('  @make_continuity_matrix() = %.1e sec' % cpu_time_10)
+print('  @make_external_bias_vector() = %.1e sec' % cpu_time_11)
+print('  @make_fixed_charge_vector() = %.1e sec' % cpu_time_12)
+print('  @solve_poisson_equation() = %.1e sec' % cpu_time_13)
+print('')
+
+# Poisson equation solver check
+print('Poisson equation solver check list')
+print('  @V   = [%.3f %.3f]' % (np.min(grid_solver.V1), np.max(grid_solver.V1)))
+print('  @E   = [%.3e %.3e]' % (np.min(grid_solver.E), np.max(grid_solver.E)))
+print('  @Er  = [%.3e %.3e]' % (np.min(grid_solver.Er), np.max(grid_solver.Er)))
+print('  @Ez  = [%.3e %.3e]' % (np.min(grid_solver.Ez), np.max(grid_solver.Ez)))
+print('  @Vbi = [%.3f %.3f]' % (np.min(grid_solver.Vbi), np.max(grid_solver.Vbi)))
+print('')
 
 # WL bias sweep
 WL_sweep_range = np.linspace(0.0, 4.0, 41)
@@ -1213,15 +1257,26 @@ for WL_bias in WL_sweep_range:
         
         # progress check
         if index % 100 == 0:
+            # progress check
             output_string = '%i,%.2f,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e' % \
                             (index, WL_bias, each_time, dt, Qn_bl, Qp_bl, Qn_sl, Qp_sl)
-            print(output_string)
+            print(output_string)            
+            # Poisson equation solver & Continuity equation solver check
+            print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]' % \
+                  (np.min(grid_solver.V1), np.max(grid_solver.V1), \
+                   np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
+                   np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
         
     # CPU time
     end = time.time()
     output_string = ' CPU time %.3f sec (%s),%.2f,%i,%.3e,%.3e' % \
                     (end-start, time.ctime(), WL_bias, index, Qn_bl, Qn_sl)
     print(output_string)
+    # Poisson equation solver & Continuity equation solver check
+    print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]\n' % \
+          (np.min(grid_solver.V1), np.max(grid_solver.V1), \
+           np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
+           np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
 
 
 
