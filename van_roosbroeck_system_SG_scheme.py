@@ -623,8 +623,8 @@ class GRID:
                         self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
                         self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
                         # sparse matrix (neumann conditions)
-                        self.PM[index_r_z, index_r_z  ] += +pm_r_zp1
-                        self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
+                        self.PM[index_r_z, index_r_z  ] += +1.0 #+pm_r_zp1
+                        self.PM[index_r_z, index_r_zp1] += -1.0 #-pm_r_zp1
                         
                     # Z = -1 boundary
                     if (each_z == (self.Z_nodes_len-1)) and (each_r == 0):
@@ -666,8 +666,8 @@ class GRID:
                         self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
                         self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
                         # sparse matrix (neumann conditions)
-                        self.PM[index_r_z, index_r_z  ] += +pm_r_zm1
-                        self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
+                        self.PM[index_r_z, index_r_z  ] += +1.0 #+pm_r_zm1
+                        self.PM[index_r_z, index_r_zm1] += -1.0 #-pm_r_zm1
 
         # STEP3: neumann boundary conditions (R boundaries)
         for each_r in [0, self.R_nodes_len-1]:
@@ -735,8 +735,8 @@ class GRID:
                         pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
                         pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
                         # sparse matrix (neumann conditions)
-                        self.PM[index_r_z, index_r_z  ] += +pm_rm1_z
-                        self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
+                        self.PM[index_r_z, index_r_z  ] += +1.0 #+pm_rm1_z
+                        self.PM[index_r_z, index_rm1_z] += -1.0 #-pm_rm1_z
                         #  sparse matrix
                         self.PM[index_r_z, index_r_z  ] += +pm_r_zm1 + pm_r_zp1
                         self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
@@ -1208,14 +1208,17 @@ for WL_bias in WL_sweep_range:
     
     # poisson equation solver
     ext_bias = {10001:0.0, 10002:0.0}                                                       # BL, SL ext. bias
-    ext_bias.update({100:WL_bias, 101:WL_bias, 102:WL_bias, 103:WL_bias, 104:WL_bias})      # WL ext. bias
+    for each_wl in range(wl_ea):
+        each_wl_mat_no = 100 + each_wl
+        ext_bias.update({each_wl_mat_no:WL_bias})                                           # WL ext. bias
     grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
     ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
     grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
 
-    # injected charge
+    # injected charge, injected current
     Qn_bl, Qp_bl, Qn_sl, Qp_sl = 0.0, 0.0, 0.0, 0.0
-
+    In_bl, Ip_bl, In_sl, Ip_sl = 0.0, 0.0, 0.0, 0.0
+    
     # error control
     prev_Qn_bl, prev_Qp_bl, prev_Qn_sl, prev_Qp_sl = 1.0, 1.0, 1.0, 1.0
     err_Qn_bl,  err_Qp_bl,  err_Qn_sl,  err_Qp_sl  = 1.0, 1.0, 1.0, 1.0
@@ -1229,7 +1232,7 @@ for WL_bias in WL_sweep_range:
         else:
             dt = each_time - timeline[index-1]
         # output filename
-        if index % 500 == 0:
+        if index % 200 == 0:
             output_filename = 'SG_scheme_%05i_Vg_%.2f_elapsed_time_%.2e_dt_%.2e.png' % (index, WL_bias, each_time, dt)
         else:
             output_filename = False
@@ -1256,10 +1259,10 @@ for WL_bias in WL_sweep_range:
             prev_Qn_sl, prev_Qp_sl = Qn_sl, Qp_sl
         
         # progress check
-        if index % 100 == 0:
+        if index % 200 == 0:
             # progress check
-            output_string = '%i,%.2f,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e' % \
-                            (index, WL_bias, each_time, dt, Qn_bl, Qp_bl, Qn_sl, Qp_sl)
+            output_string = '%i,%.2f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e' % \
+                            (index, WL_bias, each_time, dt, Qn_bl, Qn_sl, In_bl, In_sl)
             print(output_string)            
             # Poisson equation solver & Continuity equation solver check
             print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]' % \
@@ -1269,8 +1272,8 @@ for WL_bias in WL_sweep_range:
         
     # CPU time
     end = time.time()
-    output_string = ' CPU time %.3f sec (%s),%.2f,%i,%.3e,%.3e' % \
-                    (end-start, time.ctime(), WL_bias, index, Qn_bl, Qn_sl)
+    output_string = ' CPU time %.3f sec (%s),%.2f,%i,%.2e,%.2e,%.2e,%.2e' % \
+                    (end-start, time.ctime(), WL_bias, index, Qn_bl, Qn_sl, In_bl, In_sl)
     print(output_string)
     # Poisson equation solver & Continuity equation solver check
     print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]\n' % \
