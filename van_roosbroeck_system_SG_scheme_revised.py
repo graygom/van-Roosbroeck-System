@@ -364,7 +364,7 @@ class GRID:
         
         # BL contact RZ index set
         bl_contact_set = set()
-        bl_contact_z_index = 0                          # Z start index
+        bl_contact_z_index = 0                                  # Z start index
         for each_r_index in range(self.R_nodes_len):
             check_point = (each_r_index, bl_contact_z_index)
             if check_point in self.RZ_MIS['S'][si_mat_no]:      # check mat no
@@ -372,7 +372,7 @@ class GRID:
                 
         # SL contact RZ index set
         sl_contact_set = set()
-        sl_contact_z_index = self.Z_nodes_len-1         # Z end index
+        sl_contact_z_index = self.Z_nodes_len-1                 # Z end index
         for each_r_index in range(self.R_nodes_len):
             check_point = (each_r_index, sl_contact_z_index)
             if check_point in self.RZ_MIS['S'][si_mat_no]:      # check mat no
@@ -437,6 +437,24 @@ class GRID:
         self.Vbi = np.where( self.N_INT != 0.0, \
                              self.Vtm * np.log( ( self.DP + np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) ) / ( 2.0*self.N_INT ) ), \
                              0.0 )      # 1D array
+
+        # BL ohmic contact (initialization)
+        for each_point in bl_points:
+            #
+            r_node, z_node = each_point
+            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)      # 1D array index
+            #
+            self.n1_bl, self.p1_bl = self.n1[index_r_z], self.p1[index_r_z]
+            self.Vbi_bl = self.Vbi[index_r_z]
+            
+        # SL ohmic contact (initialization)
+        for each_point in sl_points:
+            #
+            r_node, z_node = each_point
+            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)      # 1D array index
+            #
+            self.n1_sl, self.p1_sl = self.n1[index_r_z], self.p1[index_r_z]
+            self.Vbi_sl = self.Vbi[index_r_z]
 
         # coefficient of continuity equation matrix (initialization)
         self.CM = {}            # semiconductor
@@ -789,7 +807,7 @@ class GRID:
                 self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
                 # BL ohmic contact vector
                 self.PM[index_r_z, index_r_z  ] += +pm_r_zm1
-                self.PM_B[index_r_z           ] += +pm_r_zm1        
+                self.PM_B[index_r_z           ]  = +pm_r_zm1        
 
         # STEP2-2: SL ohmic contact @Z = -1
         for each_r, each_z in self.RZ_MIS['O'][sl_mat_no]:
@@ -834,7 +852,7 @@ class GRID:
                 self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
                 # SL ohmic contact vector
                 self.PM[index_r_z, index_r_z  ] += +pm_r_zp1
-                self.PM_S[index_r_z           ] += +pm_r_zp1
+                self.PM_S[index_r_z           ]  = +pm_r_zp1
 
         # STEP3-1: neumann boundary conditions (Z boundaries)
         for each_z in [0, self.Z_nodes_len-1]:
@@ -866,24 +884,30 @@ class GRID:
                         geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
                         geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
                         geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        geometry_effect_r_zm1  = 1.0
+                        geometry_effect_r_zp1  = 1.0
                         # 2nd derivatives
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
+                        geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
                         # electric permittivity
                         ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r-1,each_z+0])/2.0
                         ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                        ep_r_avg_zp1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
                         # elements
                         pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
                         pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
                         # poisson matrix
                         self.PM[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
                         self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
                         self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
                         # neumann boundary conditions
-                        self.PM[index_r_z, index_r_z  ] += +1.0
-                        self.PM[index_r_z, index_r_zp1] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +pm_r_zp1
+                        self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
                     # boundary
                     if each_z == (self.Z_nodes_len-1) and (each_r == 0):
                         # neumann boundary conditions
@@ -903,24 +927,30 @@ class GRID:
                         geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
                         geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
                         geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        geometry_effect_r_zm1  = 1.0
+                        geometry_effect_r_zp1  = 1.0
                         # 2nd derivatives
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+0]-self.RZ_Z[each_r+0,each_z-1])
+                        geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+0]-self.RZ_Z[each_r+0,each_z-1])
                         # electric permittivity
                         ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z-1])/2.0
                         ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
+                        ep_r_avg_zm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
                         # elements
                         pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
                         pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
                         # poisson matrix
                         self.PM[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
                         self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
                         self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
                         # neumann boundary conditions
-                        self.PM[index_r_z, index_r_z  ] += +1.0
-                        self.PM[index_r_z, index_r_zm1] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +pm_r_zm1
+                        self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
 
         # STEP3-2: neumann boundary conditions (R boundaries)
         for each_r in [0, self.R_nodes_len-1]:
@@ -1051,6 +1081,12 @@ class GRID:
         self.Ncsr = self.N.tocsr()
         self.Pcsr = self.P.tocsr()
 
+        # making BL, SL ohmic contact vector (time evolution)
+        self.dN_B = np.zeros(self.RZ_nodes_len)
+        self.dP_B = np.zeros(self.RZ_nodes_len)
+        self.dN_S = np.zeros(self.RZ_nodes_len)
+        self.dP_S = np.zeros(self.RZ_nodes_len)
+
         # CPU time
         end = time.time()
 
@@ -1084,9 +1120,11 @@ class SOLVER(GRID):
                 index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
                 # BL ohmic contact
                 if each_mat_no == 10001:
+                    self.V_BL = self.Vbi[index_r_z] + external_bias_conditions[each_mat_no]
                     self.EB[index_r_z] = self.Vbi[index_r_z] + self.PM_B[index_r_z] * external_bias_conditions[each_mat_no]
                 # SL ohmic contact
                 if each_mat_no == 10002:
+                    self.V_SL = self.Vbi[index_r_z] + external_bias_conditions[each_mat_no]
                     self.EB[index_r_z] = self.Vbi[index_r_z] + self.PM_S[index_r_z] * external_bias_conditions[each_mat_no]
 
         # CPU time
@@ -1209,6 +1247,116 @@ class SOLVER(GRID):
                     self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ] * dt
                     self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ] * dt
 
+        # sweep target points (BL contact)
+        for each_point in self.CM_B.keys():
+            # selected target point
+            each_r, each_z = each_point
+            tg_index = self.R_nodes_len * each_z + each_r
+            
+            # sweep neighbor points around selected target point
+            for neighbor_point in self.CM_B[each_point].keys():
+                # selected neighbor point
+                neighbor_index = self.CM_B[each_point][neighbor_point]['index']
+                n_CM_coeff = self.CM_B[each_point][neighbor_point]['n_CM_coeff']
+                p_CM_coeff = self.CM_B[each_point][neighbor_point]['p_CM_coeff']
+                
+                # r-1, z
+                if neighbor_point == 'rm1_z':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_f[ each_r-1, each_z+0 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_b[ each_r-1, each_z+0 ] * dt
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_b[ each_r-1, each_z+0 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_f[ each_r-1, each_z+0 ] * dt
+                    
+                # r+1, z
+                if neighbor_point == 'rp1_z':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_b[ each_r+0, each_z+0 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_f[ each_r+0, each_z+0 ] * dt
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_f[ each_r+0, each_z+0 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_b[ each_r+0, each_z+0 ] * dt
+                    
+                # r, z-1 (BL ohmic contact)
+                if neighbor_point == 'r_zm1':
+                    # including BL ohmic contact
+                    B_tol = 1e-10
+                    dVz_f_B = ( self.V2[each_r+0, each_z+0] - self.V_BL ) / self.Vtm
+                    dVz_b_B = ( self.V_BL - self.V2[each_r+0, each_z+0] ) / self.Vtm
+                    Bz_f_B = np.where( np.abs(dVz_f_B) > B_tol, dVz_f_B / ( np.exp(dVz_f_B) - 1.0 ), 1.0)
+                    Bz_b_B = np.where( np.abs(dVz_b_B) > B_tol, dVz_b_B / ( np.exp(dVz_b_B) - 1.0 ), 1.0)
+                    # change in electron density                    
+                    self.dN[tg_index, tg_index] += +n_CM_coeff * Bz_f_B * dt
+                    self.dN_B[tg_index]          = +n_CM_coeff * Bz_b_B * dt * self.n1_bl
+                    # change in hole density
+                    self.dP[tg_index, tg_index] += +p_CM_coeff * Bz_b_B * dt
+                    self.dP_B[tg_index]          = +p_CM_coeff * Bz_f_B * dt * self.p1_bl
+                    
+                # r, z+1
+                if neighbor_point == 'r_zp1':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ] * dt
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ] * dt
+
+        # sweep target points (SL contact)
+        for each_point in self.CM_S.keys():
+            # selected target point
+            each_r, each_z = each_point
+            tg_index = self.R_nodes_len * each_z + each_r
+            
+            # sweep neighbor points around selected target point
+            for neighbor_point in self.CM_S[each_point].keys():
+                # selected neighbor point
+                neighbor_index = self.CM_S[each_point][neighbor_point]['index']
+                n_CM_coeff = self.CM_S[each_point][neighbor_point]['n_CM_coeff']
+                p_CM_coeff = self.CM_S[each_point][neighbor_point]['p_CM_coeff']
+                
+                # r-1, z
+                if neighbor_point == 'rm1_z':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_f[ each_r-1, each_z+0 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_b[ each_r-1, each_z+0 ] * dt
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_b[ each_r-1, each_z+0 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_f[ each_r-1, each_z+0 ] * dt
+                    
+                # r+1, z
+                if neighbor_point == 'rp1_z':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_b[ each_r+0, each_z+0 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_f[ each_r+0, each_z+0 ] * dt
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_f[ each_r+0, each_z+0 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_b[ each_r+0, each_z+0 ] * dt
+                    
+                # r, z-1
+                if neighbor_point == 'r_zm1':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ] * dt
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ] * dt
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ] * dt
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ] * dt
+                    
+                # r, z+1 (SL ohmic contact)
+                if neighbor_point == 'r_zp1':
+                    # including SL ohmic contact
+                    B_tol = 1e-10
+                    dVz_f_S = ( self.V_SL - self.V2[each_r+0, each_z+0] ) / self.Vtm
+                    dVz_b_S = ( self.V2[each_r+0, each_z+0] - self.V_SL ) / self.Vtm
+                    Bz_f_S = np.where( np.abs(dVz_f_S) > B_tol, dVz_f_S / ( np.exp(dVz_f_S) - 1.0 ), 1.0)
+                    Bz_b_S = np.where( np.abs(dVz_b_S) > B_tol, dVz_b_S / ( np.exp(dVz_b_S) - 1.0 ), 1.0)
+                    # change in electron density
+                    self.dN[tg_index, tg_index] += +n_CM_coeff * Bz_b_S * dt
+                    self.dN_S[tg_index        ]  = +n_CM_coeff * Bz_f_S * dt * self.n1_sl
+                    # change in hole density
+                    self.dP[tg_index, tg_index] += +p_CM_coeff * Bz_f_S * dt
+                    self.dP_S[tg_index        ]  = +p_CM_coeff * Bz_b_S * dt * self.p1_sl
+
         # CSR format
         self.dNcsr = self.dN.tocsr()
         self.dPcsr = self.dP.tocsr()
@@ -1228,8 +1376,8 @@ class SOLVER(GRID):
         self.make_N_P_matrix(dt)
         
         # sparse matrix solver for continuity equation
-        self.n1 = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 )
-        self.p1 = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 )
+        self.n1 = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 + self.dN_B + self.dN_S)
+        self.p1 = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 + self.dP_B + self.dP_S)
 
         # 2D visualization 
         self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
@@ -1274,7 +1422,7 @@ class SOLVER(GRID):
         In_bl, Ip_bl, In_sl, Ip_sl = 0.0, 0.0, 0.0, 0.0
         
         # get BL ohmic contact points list
-        bl_points, sl_points  = list(self.RZ_MIS['M'][bl_mat_no]), list(self.RZ_MIS['M'][sl_mat_no])
+        bl_points, sl_points  = list(self.RZ_MIS['O'][bl_mat_no]), list(self.RZ_MIS['O'][sl_mat_no])
         
         # check every BL ohmic contact points
         for each_r_index, each_z_index in bl_points:
@@ -1283,12 +1431,17 @@ class SOLVER(GRID):
             # calculate area
             area = perimeter * self.RZ_dR[each_r_index, each_z_index]
             # calculate Jn_bl, Jp_bl
+            B_tol = 1e-10
+            dVz_f_B = ( self.V2[each_r_index+0, each_z_index+0] - self.V_BL ) / self.Vtm
+            dVz_b_B = ( self.V_BL - self.V2[each_r_index+0, each_z_index+0] ) / self.Vtm
+            Bz_f_B = np.where( np.abs(dVz_f_B) > B_tol, dVz_f_B / ( np.exp(dVz_f_B) - 1.0 ), 1.0)
+            Bz_b_B = np.where( np.abs(dVz_b_B) > B_tol, dVz_b_B / ( np.exp(dVz_b_B) - 1.0 ), 1.0)
+            #
             Jn_bl  = +self.q * self.MAT['SI']['mu_n'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index]
-            Jn_bl *= ( self.Bz_f[each_r_index, each_z_index] * self.n2[each_r_index, each_z_index+1] - \
-                       self.Bz_b[each_r_index, each_z_index] * self.n2[each_r_index, each_z_index+0] )
+            Jn_bl *= ( Bz_f_B * self.n2[each_r_index, each_z_index] - Bz_b_B * self.n1_bl )
+            #
             Jp_bl  = -self.q * self.MAT['SI']['mu_p'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index]
-            Jp_bl *= ( self.Bz_b[each_r_index, each_z_index] * self.p2[each_r_index, each_z_index+1] - \
-                       self.Bz_f[each_r_index, each_z_index] * self.p2[each_r_index, each_z_index+0] )
+            Jp_bl *= ( Bz_b_B * self.p2[each_r_index, each_z_index] - Bz_f_B * self.p1_bl )
             # calculate I_bl, I_bl
             In_bl += area * Jn_bl
             Ip_bl += area * Jp_bl
@@ -1300,12 +1453,17 @@ class SOLVER(GRID):
             # calculate area
             area = perimeter * self.RZ_dR[each_r_index, each_z_index-1]
             # calculate Jn_sl, Jp_sl
+            B_tol = 1e-10
+            dVz_f_S = ( self.V_SL - self.V2[each_r_index+0, each_z_index+0] ) / self.Vtm
+            dVz_b_S = ( self.V2[each_r_index+0, each_z_index+0] - self.V_SL ) / self.Vtm
+            Bz_f_S = np.where( np.abs(dVz_f_S) > B_tol, dVz_f_S / ( np.exp(dVz_f_S) - 1.0 ), 1.0)
+            Bz_b_S = np.where( np.abs(dVz_b_S) > B_tol, dVz_b_S / ( np.exp(dVz_b_S) - 1.0 ), 1.0)
+            #
             Jn_sl  = +self.q * self.MAT['SI']['mu_n'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index-1]
-            Jn_sl *= ( self.Bz_f[each_r_index, each_z_index-1] * self.n2[each_r_index, each_z_index+0] - \
-                       self.Bz_b[each_r_index, each_z_index-1] * self.n2[each_r_index, each_z_index-1] )
+            Jn_sl *= ( Bz_f_S * self.n1_sl - Bz_b_S * self.n2[each_r_index, each_z_index+0] )
+            #
             Jp_sl  = -self.q * self.MAT['SI']['mu_p'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index-1]
-            Jp_sl *= ( self.Bz_b[each_r_index, each_z_index-1] * self.p2[each_r_index, each_z_index+0] - \
-                       self.Bz_f[each_r_index, each_z_index-1] * self.p2[each_r_index, each_z_index-1] )
+            Jp_sl *= ( Bz_b_S * self.p1_sl - Bz_f_S * self.p2[each_r_index, each_z_index+0] )
             # calculate I_bl, I_bl
             In_sl += area * Jn_sl
             Ip_sl += area * Jp_sl
@@ -1319,7 +1477,7 @@ class SOLVER(GRID):
 #
 
 # number of wls
-wl_ea = 7
+wl_ea = 1
 
 # material para
 mat_para_dictionary = {}
@@ -1384,12 +1542,12 @@ cpu_time_3 = grid_solver.set_unit_cell_Z_grid(z_on_thk_dz=uc_z_on_thk_dz, z_offs
 cpu_time_4 = grid_solver.set_unit_cell_RZ_grid()
 cpu_time_5 = grid_solver.set_unit_cell_RZ_mis_region()
 cpu_time_6 = grid_solver.add_ohmic_contact(si_mat_no=20, bl_mat_no=10001, sl_mat_no=10002)
-cpu_time_7 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, si_mat_no=20, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e20])
+cpu_time_7 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, si_mat_no=20, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e21])
 cpu_time_8 = grid_solver.make_poisson_matrix(bl_mat_no=10001, sl_mat_no=10002)
 cpu_time_9 = grid_solver.make_continuity_matrix()
 
 # poisson equation solver
-bl_bias, sl_bias, wl_bias = 0.0, 0.0, 1.0
+bl_bias, sl_bias, wl_bias = 0.0, 0.0, 0.0
 ext_bias = {10001:bl_bias, 10002:sl_bias}                                                           # BL, SL ext. bias
 for each_wl in range(wl_ea):
     each_wl_mat_no = 100 + each_wl
@@ -1400,7 +1558,7 @@ cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixe
 cpu_time_12 = grid_solver.solve_poisson_equation()
 
 # visualization
-if False:
+if True:
     fig, ax = plt.subplots(2, 2)
     ax00 = ax[0,0].imshow(grid_solver.V2, origin='lower')
     ax01 = ax[0,1].imshow(grid_solver.E, origin='lower')
@@ -1413,8 +1571,8 @@ if False:
     plt.show()
 
 # continuity equation solver
-cpu_time_13 = grid_solver.make_N_P_matrix(dt=1e-10)
-cpu_time_14 = grid_solver.solve_continuity_equation(dt=1e-10, output_filename=False)
+cpu_time_13 = grid_solver.make_N_P_matrix(dt=1e-9)
+cpu_time_14 = grid_solver.solve_continuity_equation(dt=1e-9, output_filename=False)
 cpu_time_15 = grid_solver.solve_poisson_equation()
 
 # visualization
@@ -1468,39 +1626,49 @@ print('  @dN   = [%.3e %.3e]' % (np.min(grid_solver.dNcsr), np.max(grid_solver.d
 print('  @dP   = [%.3e %.3e]' % (np.min(grid_solver.dPcsr), np.max(grid_solver.dPcsr)))
 
 
-
-
-
-
-
-if False:
+# CV calculation
+print('CV calculation')
+if True:
     # WL bias sweep
-    WL_sweep_range = np.linspace(0.0, 4.0, 41)
-    WL_sweep_range = np.linspace(1.5, 3.0, 16)
+    WL_sweep_range = np.linspace(0.0, 4.0, 40)
 
+    #
     for WL_bias in WL_sweep_range:
         # CPU time
         start = time.time()
         
-        # poisson equation solver
+        # poisson equation solver (external bias)
+        bl_bias, sl_bias, wl_bias = 0.0, 0.0, WL_bias
+        ext_bias = {10001:bl_bias, 10002:sl_bias}                                                           # BL, SL ext. bias
+        for each_wl in range(wl_ea):
+            each_wl_mat_no = 100 + each_wl
+            ext_bias.update({each_wl_mat_no:wl_bias})                                                       # WL ext. bias
+        grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
 
-        # injected charge
+        # poisson equation solver (fixed charge density)
+        ctn_fixed_charge_density = {31:0.0e24}                                                              # fixed charge
+        grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
+
+        # injected charge (initialization)
         Qn_bl, Qp_bl, Qn_sl, Qp_sl = 0.0, 0.0, 0.0, 0.0
 
-        # error control
+        # error control (initialization)
         prev_Qn_bl, prev_Qp_bl, prev_Qn_sl, prev_Qp_sl = 1.0, 1.0, 1.0, 1.0
         err_Qn_bl,  err_Qp_bl,  err_Qn_sl,  err_Qp_sl  = 1.0, 1.0, 1.0, 1.0
 
-        # SG scheme
-        timeline = np.linspace(1e-15, 5e-10, 5001)
+        # SG scheme (timeline)
+        timeline = np.linspace(1e-15, 1e-6, 1001)
+        
+        # SG scheme (time evolution)
         for index, each_time in enumerate(list(timeline)):
             # calculating dt, elapsed time
             if index == 0:
                 dt = each_time
             else:
                 dt = each_time - timeline[index-1]
+                
             # output filename
-            if index % 500 == 0:
+            if index % 100 == 0:
                 output_filename = 'SG_scheme_%05i_Vg_%.2f_elapsed_time_%.2e_dt_%.2e.png' % (index, WL_bias, each_time, dt)
             else:
                 output_filename = False
@@ -1520,7 +1688,7 @@ if False:
             # error control
             err_Qn_bl, err_Qp_bl = np.abs(Qn_bl-prev_Qn_bl)/np.absolute(Qn_bl), np.abs(Qp_bl-prev_Qp_bl)/np.absolute(Qp_bl)
             err_Qn_sl, err_Qp_sl = np.abs(Qn_sl-prev_Qn_sl)/np.absolute(Qn_sl), np.abs(Qp_sl-prev_Qp_sl)/np.absolute(Qp_sl)
-            if (err_Qn_bl < 1e-5) and (err_Qn_sl < 1e-5):
+            if (err_Qn_bl < 1e-7) and (err_Qn_sl < 1e-7):
                 break
             else:
                 prev_Qn_bl, prev_Qp_bl = Qn_bl, Qp_bl
@@ -1531,7 +1699,7 @@ if False:
                 output_string = '%i,%.2f,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e' % \
                                 (index, WL_bias, each_time, dt, Qn_bl, Qp_bl, Qn_sl, Qp_sl)
                 print(output_string)
-            
+
         # CPU time
         end = time.time()
         output_string = ' CPU time %.3f sec (%s),%.2f,%i,%.3e,%.3e' % \
