@@ -2,7 +2,7 @@
 # TITLE: solving the van Roosbroeck system numerically
 # AUTHOR: Hyunseung Yoo
 # PURPOSE: 
-# REVISION: ohmic contact revision @Feb. 2026
+# REVISION: ohmic contacts & edge boundary conditions revision @Feb. 2026
 # REFERENCE: a numerical study of the van Roosbroeck system for semiconductor (SJSU, 2018) 
 #
 
@@ -743,8 +743,8 @@ class GRID:
             for each_r, each_z in self.RZ_MIS['M'][each_mat_no]:
                 # 1D serialization index
                 index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
-                # directly related to electric potential
-                self.PM[index_r_z, index_r_z] = 1.0
+                # sparse matrix (directly related to electric potential)
+                self.PM[index_r_z, index_r_z] += 1.0
 
         # STEP2-1: BL ohmic contact @Z = 0
         for each_r, each_z in self.RZ_MIS['O'][bl_mat_no]:
@@ -783,12 +783,13 @@ class GRID:
                 pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1             # BL ohmic contact
                 pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
                 # sparse matrix
-                self.PM[index_r_z, index_r_z  ] = +pm_rm1_z + pm_rp1_z + pm_r_zm1 + pm_r_zp1
-                self.PM[index_r_z, index_rm1_z] = -pm_rm1_z
-                self.PM[index_r_z, index_rp1_z] = -pm_rp1_z
-                self.PM[index_r_z, index_r_zp1] = -pm_r_zp1
+                self.PM[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z + pm_r_zp1
+                self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
+                self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
+                self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
                 # BL ohmic contact vector
-                self.PM_B[index_r_z] = +pm_r_zm1        
+                self.PM[index_r_z, index_r_z  ] += +pm_r_zm1
+                self.PM_B[index_r_z           ] += +pm_r_zm1        
 
         # STEP2-2: SL ohmic contact @Z = -1
         for each_r, each_z in self.RZ_MIS['O'][sl_mat_no]:
@@ -827,30 +828,99 @@ class GRID:
                 pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
                 pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1             # SL ohmic contact
                 # sparse matrix
-                self.PM[index_r_z, index_r_z  ] = +pm_rm1_z + pm_rp1_z + pm_r_zm1 + pm_r_zp1
-                self.PM[index_r_z, index_rm1_z] = -pm_rm1_z
-                self.PM[index_r_z, index_rp1_z] = -pm_rp1_z
-                self.PM[index_r_z, index_r_zm1] = -pm_r_zm1
+                self.PM[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z + pm_r_zm1
+                self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
+                self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
+                self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
                 # SL ohmic contact vector
-                self.PM_S[index_r_z] = +pm_r_zp1
+                self.PM[index_r_z, index_r_z  ] += +pm_r_zp1
+                self.PM_S[index_r_z           ] += +pm_r_zp1
 
         # STEP3-1: neumann boundary conditions (Z boundaries)
         for each_z in [0, self.Z_nodes_len-1]:
             for each_r in range(self.R_nodes_len):
                 # 1D serialization index
                 index_r_z   = self.R_nodes_len * (each_z+0) + (each_r+0)
+                index_rm1_z = self.R_nodes_len * (each_z+0) + (each_r-1)
+                index_rp1_z = self.R_nodes_len * (each_z+0) + (each_r+1)
                 index_r_zm1 = self.R_nodes_len * (each_z-1) + (each_r+0)
                 index_r_zp1 = self.R_nodes_len * (each_z+1) + (each_r+0)
                 # if not defined
                 if self.PM[index_r_z, index_r_z] == 0.0:
                     # boundary
-                    if each_z == 0:
-                        self.PM[index_r_z, index_r_z  ] = +1.0
-                        self.PM[index_r_z, index_r_zp1] = -1.0
+                    if (each_z == 0) and (each_r == 0):
+                        # neumann boundary conditions
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rp1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zp1] += -1.0
+                    elif (each_z == 0) and (each_r == (self.R_nodes_len-1)):
+                        # neumann boundary conditions
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rm1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zp1] += -1.0
+                    elif (each_z == 0):
+                        # geometry factors in r direction
+                        geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
+                        geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
+                        geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        # 2nd derivatives
+                        geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
+                        geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
+                        geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        # electric permittivity
+                        ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r-1,each_z+0])/2.0
+                        ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                        # elements
+                        pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
+                        pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        # poisson matrix
+                        self.PM[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
+                        self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
+                        self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
+                        # neumann boundary conditions
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zp1] += -1.0
                     # boundary
-                    if each_z == (self.Z_nodes_len-1):
-                        self.PM[index_r_z, index_r_z  ] = +1.0
-                        self.PM[index_r_z, index_r_zm1] = -1.0
+                    if each_z == (self.Z_nodes_len-1) and (each_r == 0):
+                        # neumann boundary conditions
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rp1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zm1] += -1.0
+                    elif each_z == (self.Z_nodes_len-1) and (each_r == (self.R_nodes_len-1)):
+                        # neumann boundary conditions
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rm1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zm1] += -1.0
+                    elif each_z == (self.Z_nodes_len-1):
+                        # geometry factors in r direction
+                        geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
+                        geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
+                        geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        # 2nd derivatives
+                        geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
+                        geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
+                        geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        # electric permittivity
+                        ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z-1])/2.0
+                        ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
+                        # elements
+                        pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
+                        pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        # poisson matrix
+                        self.PM[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
+                        self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
+                        self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
+                        # neumann boundary conditions
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zm1] += -1.0
 
         # STEP3-2: neumann boundary conditions (R boundaries)
         for each_r in [0, self.R_nodes_len-1]:
@@ -859,16 +929,46 @@ class GRID:
                 index_r_z   = self.R_nodes_len * (each_z+0) + (each_r+0)
                 index_rm1_z = self.R_nodes_len * (each_z+0) + (each_r-1)
                 index_rp1_z = self.R_nodes_len * (each_z+0) + (each_r+1)
+                index_r_zm1 = self.R_nodes_len * (each_z-1) + (each_r+0)
+                index_r_zp1 = self.R_nodes_len * (each_z+1) + (each_r+0)
                 # if not defined
                 if self.PM[index_r_z, index_r_z] == 0.0:
                     # boundary
-                    if each_r == 0:
-                        self.PM[index_r_z, index_r_z  ] = +1.0
-                        self.PM[index_r_z, index_rp1_z] = -1.0
+                    if (each_r == 0) and (each_z == 0):
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rp1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zp1] += -1.0
+                    elif (each_r == 0) and (each_z == (self.Z_nodes_len-1)):
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rp1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zm1] += -1.0
+                    elif (each_r == 0):
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rp1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zp1] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zm1] += -1.0
                     # boundary
-                    if each_r == (self.R_nodes_len-1):
-                        self.PM[index_r_z, index_r_z  ] = +1.0
-                        self.PM[index_r_z, index_rm1_z] = -1.0
+                    if (each_r == (self.R_nodes_len-1)) and (each_z == 0):
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rm1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zp1] += -1.0
+                    elif (each_r == (self.R_nodes_len-1)) and (each_z == (self.Z_nodes_len-1)):
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rm1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zm1] += -1.0
+                    elif (each_r == (self.R_nodes_len-1)):
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_rm1_z] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zp1] += -1.0
+                        self.PM[index_r_z, index_r_z  ] += +1.0
+                        self.PM[index_r_z, index_r_zm1] += -1.0
 
         # STEP4: inside boundary conditions
         for each_r in range(1, self.R_nodes_len-1):
@@ -1210,7 +1310,7 @@ class SOLVER(GRID):
 #
 
 # number of wls
-wl_ea = 5
+wl_ea = 1
 
 # material para
 mat_para_dictionary = {}
@@ -1288,7 +1388,15 @@ ctn_fixed_charge_density = {31:0.0e24}                                          
 cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
 cpu_time_12 = grid_solver.solve_poisson_equation()
 
-plt.imshow(grid_solver.E, origin='lower')
+fig, ax = plt.subplots(2, 2)
+ax00 = ax[0,0].imshow(grid_solver.V2, origin='lower')
+ax01 = ax[0,1].imshow(grid_solver.E, origin='lower')
+ax10 = ax[1,0].imshow(grid_solver.Er, origin='lower')
+ax11 = ax[1,1].imshow(grid_solver.Ez, origin='lower')
+plt.colorbar(ax00)
+plt.colorbar(ax01)
+plt.colorbar(ax10)
+plt.colorbar(ax11)
 plt.show()
 
 # FDM size
@@ -1312,7 +1420,13 @@ print('  @make_external_bias_vector() = %.1e sec' % cpu_time_10)
 print('  @make_fixed_charge_vector() = %.1e sec' % cpu_time_11)
 print('  @solve_poisson_equation() = %.1e sec' % cpu_time_12)
 
-
+# Poisson solver check
+print('Poisson solver check list')
+print('  @V   = [%.3f %.3f]' % (np.min(grid_solver.V1), np.max(grid_solver.V1)))
+print('  @E   = [%.3e %.3e]' % (np.min(grid_solver.E), np.max(grid_solver.E)))
+print('  @Er  = [%.3e %.3e]' % (np.min(grid_solver.Er), np.max(grid_solver.Er)))
+print('  @Ez  = [%.3e %.3e]' % (np.min(grid_solver.Ez), np.max(grid_solver.Ez)))
+print('  @Vbi = [%.3f %.3f]' % (np.min(grid_solver.Vbi), np.max(grid_solver.Vbi)))
 
 
 
@@ -1326,8 +1440,6 @@ if False:
         start = time.time()
         
         # poisson equation solver
-        
-        
 
         # injected charge
         Qn_bl, Qp_bl, Qn_sl, Qp_sl = 0.0, 0.0, 0.0, 0.0
@@ -1382,3 +1494,6 @@ if False:
         output_string = ' CPU time %.3f sec (%s),%.2f,%i,%.3e,%.3e' % \
                         (end-start, time.ctime(), WL_bias, index, Qn_bl, Qn_sl)
         print(output_string)
+
+
+
