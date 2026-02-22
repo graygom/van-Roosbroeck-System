@@ -1034,7 +1034,7 @@ class GRID:
         # CPU time
         start = time.time()
         
-        # making sparse matrix
+        # making sparse matrix (time evolution)
         self.N = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
         self.P = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
 
@@ -1126,19 +1126,19 @@ class SOLVER(GRID):
         # sparse matrix solver for poisson equation
         self.V1 = sc.sparse.linalg.spsolve(self.PMcsr, self.EB + self.q*(self.FC + self.p1 - self.n1 + self.DP) )
 
-        # visualization
+        # 2D visualization
         self.V2 = self.V1.reshape(self.Z_nodes_len, self.R_nodes_len).T
         self.Er = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.RZ_dR
         self.Ez = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.RZ_dZ
         self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
         
-        # post processing 1 for continuity equations
+        # post processing 1 (for continuity equations)
         self.dVr_f = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.Vtm
         self.dVr_b = ( self.V2[:-1,:] - self.V2[1:,:] ) / self.Vtm
         self.dVz_f = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.Vtm
         self.dVz_b = ( self.V2[:,:-1] - self.V2[:,1:] ) / self.Vtm
 
-        # post processing 2 for continuity equations
+        # post processing 2 (for continuity equations)
         B_tol = 1e-10
         self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f) - 1.0 ), 1.0)
         self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b) - 1.0 ), 1.0)
@@ -1155,52 +1155,57 @@ class SOLVER(GRID):
     def make_N_P_matrix(self, dt):
         # CPU time
         start = time.time()
-        
-        # making sparse matrix
+
+        # making sparse matrix (continuity equation)
         self.dN = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
         self.dP = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
 
         # sweep target points
         for each_point in self.CM.keys():
-            #
+            # selected target point
             each_r, each_z = each_point
             tg_index = self.R_nodes_len * each_z + each_r
-            # sweep neighbor points
+            
+            # sweep neighbor points around selected target point
             for neighbor_point in self.CM[each_point].keys():
-                #
+                # selected neighbor point
                 neighbor_index = self.CM[each_point][neighbor_point]['index']
                 n_CM_coeff = self.CM[each_point][neighbor_point]['n_CM_coeff']
                 p_CM_coeff = self.CM[each_point][neighbor_point]['p_CM_coeff']
-                #
+                
+                # r-1, z
                 if neighbor_point == 'rm1_z':   
-                    #
+                    # change in electron density
                     self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_f[ each_r-1, each_z+0 ] * dt
                     self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_b[ each_r-1, each_z+0 ] * dt
-                    #
+                    # change in hole density
                     self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_b[ each_r-1, each_z+0 ] * dt
                     self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_f[ each_r-1, each_z+0 ] * dt
-                #
+                    
+                # r+1, z
                 if neighbor_point == 'rp1_z':   
-                    #
+                    # change in electron density
                     self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_b[ each_r+0, each_z+0 ] * dt
                     self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_f[ each_r+0, each_z+0 ] * dt
-                    #
+                    # change in hole density
                     self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_f[ each_r+0, each_z+0 ] * dt
                     self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_b[ each_r+0, each_z+0 ] * dt
-                #
+                    
+                # r, z-1
                 if neighbor_point == 'r_zm1':   
-                    #
+                    # change in electron density
                     self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ] * dt
                     self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ] * dt
-                    #
+                    # change in hole density
                     self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ] * dt
                     self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ] * dt
-                #
+                    
+                # r, z+1
                 if neighbor_point == 'r_zp1':   
-                    #
+                    # change in electron density
                     self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ] * dt
                     self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ] * dt
-                    #
+                    # change in hole density
                     self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ] * dt
                     self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ] * dt
 
@@ -1267,8 +1272,10 @@ class SOLVER(GRID):
         
         # initialization
         In_bl, Ip_bl, In_sl, Ip_sl = 0.0, 0.0, 0.0, 0.0
+        
         # get BL ohmic contact points list
         bl_points, sl_points  = list(self.RZ_MIS['M'][bl_mat_no]), list(self.RZ_MIS['M'][sl_mat_no])
+        
         # check every BL ohmic contact points
         for each_r_index, each_z_index in bl_points:
             # calculate perimeter
@@ -1285,6 +1292,7 @@ class SOLVER(GRID):
             # calculate I_bl, I_bl
             In_bl += area * Jn_bl
             Ip_bl += area * Jp_bl
+            
         # check every SL ohmic contact points
         for each_r_index, each_z_index in sl_points:
             # calculate perimeter
@@ -1301,6 +1309,7 @@ class SOLVER(GRID):
             # calculate I_bl, I_bl
             In_sl += area * Jn_sl
             Ip_sl += area * Jp_sl
+            
         # return
         return [In_bl, Ip_bl, In_sl, Ip_sl]
 
@@ -1310,7 +1319,7 @@ class SOLVER(GRID):
 #
 
 # number of wls
-wl_ea = 1
+wl_ea = 7
 
 # material para
 mat_para_dictionary = {}
@@ -1382,22 +1391,44 @@ cpu_time_9 = grid_solver.make_continuity_matrix()
 # poisson equation solver
 bl_bias, sl_bias, wl_bias = 0.0, 0.0, 1.0
 ext_bias = {10001:bl_bias, 10002:sl_bias}                                                           # BL, SL ext. bias
-ext_bias.update({100:wl_bias, 101:wl_bias, 102:wl_bias, 103:wl_bias, 104:wl_bias})                  # WL ext. bias
+for each_wl in range(wl_ea):
+    each_wl_mat_no = 100 + each_wl
+    ext_bias.update({each_wl_mat_no:wl_bias})                                                       # WL ext. bias
 cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
 ctn_fixed_charge_density = {31:0.0e24}                                                              # fixed charge
 cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
 cpu_time_12 = grid_solver.solve_poisson_equation()
 
-fig, ax = plt.subplots(2, 2)
-ax00 = ax[0,0].imshow(grid_solver.V2, origin='lower')
-ax01 = ax[0,1].imshow(grid_solver.E, origin='lower')
-ax10 = ax[1,0].imshow(grid_solver.Er, origin='lower')
-ax11 = ax[1,1].imshow(grid_solver.Ez, origin='lower')
-plt.colorbar(ax00)
-plt.colorbar(ax01)
-plt.colorbar(ax10)
-plt.colorbar(ax11)
-plt.show()
+# visualization
+if False:
+    fig, ax = plt.subplots(2, 2)
+    ax00 = ax[0,0].imshow(grid_solver.V2, origin='lower')
+    ax01 = ax[0,1].imshow(grid_solver.E, origin='lower')
+    ax10 = ax[1,0].imshow(grid_solver.Er, origin='lower')
+    ax11 = ax[1,1].imshow(grid_solver.Ez, origin='lower')
+    plt.colorbar(ax00)
+    plt.colorbar(ax01)
+    plt.colorbar(ax10)
+    plt.colorbar(ax11)
+    plt.show()
+
+# continuity equation solver
+cpu_time_13 = grid_solver.make_N_P_matrix(dt=1e-10)
+cpu_time_14 = grid_solver.solve_continuity_equation(dt=1e-10, output_filename=False)
+cpu_time_15 = grid_solver.solve_poisson_equation()
+
+# visualization
+if True:
+    fig, ax = plt.subplots(2, 2)
+    ax00 = ax[0,0].imshow(grid_solver.V2, origin='lower')
+    ax01 = ax[0,1].imshow(grid_solver.E, origin='lower')
+    ax10 = ax[1,0].imshow(grid_solver.n2, origin='lower')
+    ax11 = ax[1,1].imshow(grid_solver.p2, origin='lower')
+    plt.colorbar(ax00)
+    plt.colorbar(ax01)
+    plt.colorbar(ax10)
+    plt.colorbar(ax11)
+    plt.show()
 
 # FDM size
 print('FDM size')
@@ -1419,14 +1450,26 @@ print('  @make_continuity_matrix() = %.1e sec' % cpu_time_9)
 print('  @make_external_bias_vector() = %.1e sec' % cpu_time_10)
 print('  @make_fixed_charge_vector() = %.1e sec' % cpu_time_11)
 print('  @solve_poisson_equation() = %.1e sec' % cpu_time_12)
+print('  @make_N_P_matrix() = %.1e sec' % cpu_time_13)
+print('  @solve_continuity_equation() = %.1e sec' % (cpu_time_14-cpu_time_13))
+print('  @solve_poisson_equation() = %.1e sec' % cpu_time_15)
 
-# Poisson solver check
-print('Poisson solver check list')
+# Poisson equation solver check
+print('Poisson equation solver check list')
 print('  @V   = [%.3f %.3f]' % (np.min(grid_solver.V1), np.max(grid_solver.V1)))
 print('  @E   = [%.3e %.3e]' % (np.min(grid_solver.E), np.max(grid_solver.E)))
 print('  @Er  = [%.3e %.3e]' % (np.min(grid_solver.Er), np.max(grid_solver.Er)))
 print('  @Ez  = [%.3e %.3e]' % (np.min(grid_solver.Ez), np.max(grid_solver.Ez)))
 print('  @Vbi = [%.3f %.3f]' % (np.min(grid_solver.Vbi), np.max(grid_solver.Vbi)))
+
+# Continuity equation solver check
+print('Continuity equation solver check list')
+print('  @dN   = [%.3e %.3e]' % (np.min(grid_solver.dNcsr), np.max(grid_solver.dNcsr)))
+print('  @dP   = [%.3e %.3e]' % (np.min(grid_solver.dPcsr), np.max(grid_solver.dPcsr)))
+
+
+
+
 
 
 
