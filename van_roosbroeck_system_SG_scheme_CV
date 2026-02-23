@@ -1204,8 +1204,10 @@ for WL_bias in WL_sweep_range:
     In_bl, Ip_bl, In_sl, Ip_sl = 0.0, 0.0, 0.0, 0.0
     
     # SG scheme
+    dt = 0.0
     timeline = np.linspace(1e-15, 5e-11, 10001)
-    timeline = np.logspace(-13, -9, 301)                # excellent for CV curve
+    timeline = np.logspace(-14, -9, 501)                # excellent for CV curve
+    timeline = np.logspace(-13, -10, 501)                # excellent for CV curve
     
     for index, each_time in enumerate(list(timeline)):
         # calculating dt, elapsed time, error control
@@ -1241,7 +1243,7 @@ for WL_bias in WL_sweep_range:
         Qp_sl += dQp_sl
 
         # error control
-        if ( np.abs(prev_Qn_bl/Qn_bl) > (1.0-1e-9) ) and ( np.abs(prev_Qn_sl/Qn_sl) > (1.0-1e-9) ):
+        if ( np.abs(prev_Qn_bl/Qn_bl) > (1.0-1e-11) ) and ( np.abs(prev_Qn_sl/Qn_sl) > (1.0-1e-11) ):
             break
         else:
             prev_Qn_bl, prev_Qp_bl, prev_Qn_sl, prev_Qp_sl = Qn_bl, Qp_bl, Qn_sl, Qp_sl
@@ -1260,8 +1262,8 @@ for WL_bias in WL_sweep_range:
         
     # CPU time
     end = time.time()
-    output_string = ' CPU time %.3f sec (%s),%.2f,%i,%.2e,%.2e,%.2e,%.2e' % \
-                    (end-start, time.ctime(), WL_bias, index, Qn_bl, Qn_sl, In_bl, In_sl)
+    output_string = ' CPU time %.3f sec (%s),%.2f,%.2e,%.2e,%i,%.2e,%.2e,%.2e,%.2e' % \
+                    (end-start, time.ctime(), WL_bias, timeline[index], dt, index, Qn_bl, Qn_sl, In_bl, In_sl)
     print(output_string)
     # Poisson equation solver & Continuity equation solver check
     print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]\n' % \
