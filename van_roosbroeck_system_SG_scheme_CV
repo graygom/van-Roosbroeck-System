@@ -1184,7 +1184,7 @@ print('  @Vbi = [%.3f %.3f]' % (np.min(grid_solver.Vbi), np.max(grid_solver.Vbi)
 print('')
 
 # WL bias sweep
-WL_sweep_range = np.linspace(0.0, 2.0, 21)
+WL_sweep_range = np.linspace(-3.0, 3.0, 61)
 
 for WL_bias in WL_sweep_range:
     # CPU time
@@ -1205,11 +1205,13 @@ for WL_bias in WL_sweep_range:
     
     # SG scheme
     timeline = np.linspace(1e-15, 5e-11, 10001)
+    timeline = np.logspace(-13, -9, 301)                # excellent for CV curve
     
     for index, each_time in enumerate(list(timeline)):
-        # calculating dt, elapsed time
+        # calculating dt, elapsed time, error control
         if index == 0:
             dt = each_time
+            prev_Qn_bl, prev_Qp_bl, prev_Qn_sl, prev_Qp_sl = 1e-30, 1e-30, 1e-30, 1e-30     # error control
         else:
             dt = each_time - timeline[index-1]
         # output filename
@@ -1239,8 +1241,10 @@ for WL_bias in WL_sweep_range:
         Qp_sl += dQp_sl
 
         # error control
-        if ( np.abs(dQn_bl/Qn_bl) < 1e-5 ) and ( np.abs(dQn_sl/Qn_sl) < 1e-5 ):
+        if ( np.abs(prev_Qn_bl/Qn_bl) > (1.0-1e-9) ) and ( np.abs(prev_Qn_sl/Qn_sl) > (1.0-1e-9) ):
             break
+        else:
+            prev_Qn_bl, prev_Qp_bl, prev_Qn_sl, prev_Qp_sl = Qn_bl, Qp_bl, Qn_sl, Qp_sl
         
         # progress check
         if index % 200 == 0:
@@ -1264,6 +1268,8 @@ for WL_bias in WL_sweep_range:
           (np.min(grid_solver.V1), np.max(grid_solver.V1), \
            np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
            np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+
+
 
 
 
