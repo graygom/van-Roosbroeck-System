@@ -377,7 +377,7 @@ class GRID:
         add_nodes = set()
         for each_r_node, each_z_node in list(self.RZ_MIS[before_mat_mis][before_mat_no]):
             if each_z_node == before_z_coord:
-                add_nodes.add((each_r_node, each_z_node))
+                add_nodes.add( (each_r_node, each_z_node) )         # tuples
 
         # ohmic contact -> metal
         self.RZ_MIS[before_mat_mis][before_mat_no] = self.RZ_MIS[before_mat_mis][before_mat_no].difference(add_nodes)
@@ -412,7 +412,7 @@ class GRID:
         self.DP = np.zeros(self.RZ_nodes_len)                               # 1D array
         dopant_type = doping[0]                                             # 'n' or 'p'
         dopant_density = doping[1]                                          # [m]^-3
-        for each_point in (tg_points+bl_sl_points):
+        for each_point in (tg_points + bl_sl_points):
             r_node, z_node = each_point
             index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)          # 1D array index
             if dopant_type =='n':
@@ -506,14 +506,26 @@ class GRID:
             
             # updating dR2 (R direction)
             if ('rm1_z' in each_point_neighbor) and ('rp1_z' in each_point_neighbor):
-                new_dR2 = self.CM[each_point]['rm1_z']['dR2']+self.CM[each_point]['rp1_z']['dR2']
+                new_dR2 = self.CM[each_point]['rm1_z']['dR2'] + self.CM[each_point]['rp1_z']['dR2']
                 self.CM[each_point]['rm1_z']['dR2'] = new_dR2
+                self.CM[each_point]['rp1_z']['dR2'] = new_dR2
+            elif ('rm1_z' in each_point_neighbor):
+                new_dR2 = self.CM[each_point]['rm1_z']['dR2'] * 2.0
+                self.CM[each_point]['rm1_z']['dR2'] = new_dR2
+            elif ('rp1_z' in each_point_neighbor):
+                new_dR2 = self.CM[each_point]['rp1_z']['dR2'] * 2.0
                 self.CM[each_point]['rp1_z']['dR2'] = new_dR2
                 
             # updating dZ2 (Z direction)
             if ('r_zm1' in each_point_neighbor) and ('r_zp1' in each_point_neighbor):
-                new_dZ2 = self.CM[each_point]['r_zm1']['dZ2']+self.CM[each_point]['r_zp1']['dZ2']
+                new_dZ2 = self.CM[each_point]['r_zm1']['dZ2'] + self.CM[each_point]['r_zp1']['dZ2']
                 self.CM[each_point]['r_zm1']['dZ2'] = new_dZ2
+                self.CM[each_point]['r_zp1']['dZ2'] = new_dZ2
+            elif ('r_zm1' in each_point_neighbor):
+                new_dZ2 = self.CM[each_point]['r_zm1']['dZ2'] * 2.0
+                self.CM[each_point]['r_zm1']['dZ2'] = new_dZ2
+            elif ('r_zp1' in each_point_neighbor):
+                new_dZ2 = self.CM[each_point]['r_zp1']['dZ2'] * 2.0
                 self.CM[each_point]['r_zp1']['dZ2'] = new_dZ2
                 
             # check r-1, z (R direction)
@@ -536,14 +548,14 @@ class GRID:
 
             # check r, z-1 (Z direction)
             if (each_r_node, each_z_node-1) in (tg_points + bl_sl_points):
-                self.CM[each_point]['r_zm1']['n_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zm1']['mu_n']
+                self.CM[each_point]['r_zm1']['n_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zm1']['mu_n'] * 1.0
                 self.CM[each_point]['r_zm1']['n_CM_coeff'] /= (self.CM[each_point]['r_zm1']['dZ'] * self.CM[each_point]['r_zm1']['dZ2'])
                 self.CM[each_point]['r_zm1']['p_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zm1']['mu_p']
                 self.CM[each_point]['r_zm1']['p_CM_coeff'] /= (self.CM[each_point]['r_zm1']['dZ'] * self.CM[each_point]['r_zm1']['dZ2'])
 
             # check r, z+1 (Z direction)
             if (each_r_node, each_z_node+1) in (tg_points + bl_sl_points):
-                self.CM[each_point]['r_zp1']['n_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zp1']['mu_n']
+                self.CM[each_point]['r_zp1']['n_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zp1']['mu_n'] * 1.0
                 self.CM[each_point]['r_zp1']['n_CM_coeff'] /= (self.CM[each_point]['r_zp1']['dZ'] * self.CM[each_point]['r_zp1']['dZ2'])
                 self.CM[each_point]['r_zp1']['p_CM_coeff']  = self.Vtm * self.CM[each_point]['r_zp1']['mu_p']
                 self.CM[each_point]['r_zp1']['p_CM_coeff'] /= (self.CM[each_point]['r_zp1']['dZ'] * self.CM[each_point]['r_zp1']['dZ2'])
@@ -689,6 +701,24 @@ class GRID:
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_rp1_z] += -1.0
+                        # geometry factors in r direction
+                        #geometry_effect_r_zm1  = 1.0
+                        #geometry_effect_r_zp1  = 1.0
+                        # 2nd derivatives
+                        #geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+0]-self.RZ_Z[each_r+0,each_z-1])
+                        #geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                        #geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
+                        #geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                        # electric permittivity: r-1 (invalid) -> r+0
+                        #ep_r_avg_zm1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
+                        #ep_r_avg_zp1 = (self.RZ_EP[each_r+0,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                        # elements
+                        #pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
+                        #pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
+                        # sparse matrix (poission equation)
+                        #self.PM[index_r_z, index_r_z  ] += +pm_r_zm1 + pm_r_zp1
+                        #self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
+                        #self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
                         
                     # R = -1 boundary
                     if (each_r == (self.R_nodes_len-1)) and (each_z == 0):
@@ -823,7 +853,7 @@ class GRID:
 class SOLVER(GRID):
 
     # ===== making external bias vector  =====
-    def make_external_bias_vector(self, external_bias_conditions):
+    def make_external_bias_vector(self, external_bias_conditions, workfunction):
         # CPU time
         start = time.time()
         
@@ -836,10 +866,12 @@ class SOLVER(GRID):
                     index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
                     # external bias @metal contact
                     if (each_mat_no != 10001) and (each_mat_no != 10002):
-                        self.EB[index_r_z] = external_bias_conditions[each_mat_no]
+                        self.EB[index_r_z]  = 4.05 + 1.12 / 2.0 - workfunction
+                        self.EB[index_r_z] += external_bias_conditions[each_mat_no]
                     # external bias @BL, SL contact
                     else:
-                        self.EB[index_r_z] = self.Vbi[index_r_z] + external_bias_conditions[each_mat_no]
+                        self.EB[index_r_z]  = -self.Vbi[index_r_z]
+                        self.EB[index_r_z] += external_bias_conditions[each_mat_no]
 
         # CPU time
         end = time.time()
@@ -1146,7 +1178,7 @@ ext_bias = {10001:0.0, 10002:0.0}                                               
 for each_wl in range(wl_ea):
     each_wl_mat_no = 100 + each_wl
     ext_bias.update({each_wl_mat_no:0.0})                                               # WL ext. bias
-cpu_time_11 = grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
+cpu_time_11 = grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8)
 ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
 cpu_time_12 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
 cpu_time_13 = grid_solver.solve_poisson_equation()
@@ -1183,42 +1215,56 @@ print('  @Ez  = [%.3e %.3e]' % (np.min(grid_solver.Ez), np.max(grid_solver.Ez)))
 print('  @Vbi = [%.3f %.3f]' % (np.min(grid_solver.Vbi), np.max(grid_solver.Vbi)))
 print('')
 
+# 2D visualization
+if False:
+    fig, ax = plt.subplots(2,2)
+    ax[0,0].imshow(grid_solver.V2, origin='lower')
+    ax[0,1].imshow(grid_solver.E, origin='lower')
+    ax[1,0].imshow(grid_solver.Er, origin='lower')
+    ax[1,1].imshow(grid_solver.Ez, origin='lower')
+    plt.show()
+
 # WL bias sweep
-WL_sweep_range = np.linspace(-3.0, 3.0, 61)
+WL_sweep_range = np.linspace(-2.0, 3.0, 51)
 
 for WL_bias in WL_sweep_range:
+    
     # CPU time
     start = time.time()
     
     # poisson equation solver
-    ext_bias = {10001:0.0, 10002:0.0}                                                       # BL, SL ext. bias
+    ext_bias = {10001:0.0, 10002:0.0}                                                           # BL, SL ext. bias
     for each_wl in range(wl_ea):
         each_wl_mat_no = 100 + each_wl
-        ext_bias.update({each_wl_mat_no:WL_bias})                                           # WL ext. bias
-    grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias)
-    ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
+        ext_bias.update({each_wl_mat_no:WL_bias})                                               # WL ext. bias
+    grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8)
+    ctn_fixed_charge_density = {31:0.0e24}                                                      # fixed charge
     grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
 
     # injected charge, injected current
     Qn_bl, Qp_bl, Qn_sl, Qp_sl = 0.0, 0.0, 0.0, 0.0
     In_bl, Ip_bl, In_sl, Ip_sl = 0.0, 0.0, 0.0, 0.0
+    Qn_bl_array, In_bl_array = [], []
+    Qn_sl_array, In_sl_array = [], []
     
-    # SG scheme
-    dt = 0.0
-    timeline = np.linspace(1e-15, 5e-11, 10001)
-    timeline = np.logspace(-14, -9, 501)                # excellent for CV curve
-    timeline = np.logspace(-13, -10, 501)                # excellent for CV curve
-    
-    for index, each_time in enumerate(list(timeline)):
-        # calculating dt, elapsed time, error control
-        if index == 0:
-            dt = each_time
-            prev_Qn_bl, prev_Qp_bl, prev_Qn_sl, prev_Qp_sl = 1e-30, 1e-30, 1e-30, 1e-30     # error control
-        else:
-            dt = each_time - timeline[index-1]
+    # SG scheme (poission equation + continuity equations)
+    dQ = grid_solver.q * 1e-2   # 2e-3
+    dt = 1e-17
+    each_time = 0.0
+    each_time_index = -1
+    output_index = 50
+    timeline = []
+
+    # time evolution
+    while True:
+        # info
+        each_time += dt
+        each_time_index += 1
+        timeline.append(each_time)
+
         # output filename
-        if index % 200 == 0:
-            output_filename = 'SG_scheme_CV_Vg_%.2f_%05i_elapsed_time_%.2e_dt_%.2e.png' % (WL_bias, index, each_time, dt)
+        if each_time_index % output_index == 0:
+            output_filename = 'SG_scheme_CV_Vg_%.2f_%05i_elapsed_time_%.2e_dt_%.2e.png' % (WL_bias, each_time_index, each_time, dt)
         else:
             output_filename = False
             
@@ -1230,11 +1276,12 @@ for WL_bias in WL_sweep_range:
         # calculate BL current
         In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
 
+        # update dt
+        dt = np.minimum( np.abs( dQ / In_bl ) , np.abs( dQ / In_sl ) ) * 0.5
+
         # change in charge
-        dQn_bl = In_bl * dt
-        dQp_bl = Ip_bl * dt
-        dQn_sl = In_sl * dt
-        dQp_sl = Ip_sl * dt
+        dQn_bl, dQp_bl = In_bl * dt, Ip_bl * dt
+        dQn_sl, dQp_sl = In_sl * dt, Ip_sl * dt
         
         # accumulated charge
         Qn_bl += dQn_bl
@@ -1242,34 +1289,37 @@ for WL_bias in WL_sweep_range:
         Qn_sl += dQn_sl
         Qp_sl += dQp_sl
 
-        # error control
-        if ( np.abs(prev_Qn_bl/Qn_bl) > (1.0-1e-11) ) and ( np.abs(prev_Qn_sl/Qn_sl) > (1.0-1e-11) ):
-            break
-        else:
-            prev_Qn_bl, prev_Qp_bl, prev_Qn_sl, prev_Qp_sl = Qn_bl, Qp_bl, Qn_sl, Qp_sl
+        # 
+        Qn_bl_array.append(Qn_bl)
+        Qn_sl_array.append(Qn_sl)
+        In_bl_array.append(In_bl)
+        In_sl_array.append(In_sl)
         
         # progress check
-        if index % 200 == 0:
+        if each_time_index % output_index == 0:
             # progress check
-            output_string = '%i,%.2f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e' % \
-                            (index, WL_bias, each_time, dt, Qn_bl, Qn_sl, In_bl, In_sl)
-            print(output_string)            
-            # Poisson equation solver & Continuity equation solver check
-            print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]' % \
-                  (np.min(grid_solver.V1), np.max(grid_solver.V1), \
-                   np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
-                   np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+            output_string = '%i,%.2f,%.2e,%.2e, %.2e,%.2e, %.2e,%.2e' % \
+                            (each_time_index, WL_bias, each_time, dt, In_bl, In_sl, Qn_bl, Qn_sl)
+            print(output_string)
+
+        # check saturation
+        if ( np.abs( In_bl ) < 5e-11 ) and ( np.abs( In_sl ) < 5e-11 ):
+            break      
         
     # CPU time
     end = time.time()
-    output_string = ' CPU time %.3f sec (%s),%.2f,%.2e,%.2e,%i,%.2e,%.2e,%.2e,%.2e' % \
-                    (end-start, time.ctime(), WL_bias, timeline[index], dt, index, Qn_bl, Qn_sl, In_bl, In_sl)
+    output_string = ' CPU time %.3f sec (%s),%i, %.2f, %.2e, %.2e,\n   %.2e,%.2e, %.2e,%.2e\n' % \
+                    (end-start, time.ctime(), each_time_index, WL_bias, each_time, dt, \
+                     In_bl, In_sl, Qn_bl, Qn_sl)
     print(output_string)
+    
     # Poisson equation solver & Continuity equation solver check
-    print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]\n' % \
-          (np.min(grid_solver.V1), np.max(grid_solver.V1), \
-           np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
-           np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+    #print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]' % \
+    #      (np.min(grid_solver.V1), np.max(grid_solver.V1), \
+    #       np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
+    #       np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+    
+
 
 
 
