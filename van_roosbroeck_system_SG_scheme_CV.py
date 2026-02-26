@@ -1277,7 +1277,15 @@ for WL_bias in WL_sweep_range:
         In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
 
         # update dt
-        dt = np.minimum( np.abs( dQ / In_bl ) , np.abs( dQ / In_sl ) ) * 0.5
+        In_bl_abs, In_sl_abs = np.abs(In_bl), np.abs(In_sl)
+        dt_ref = np.minimum( np.abs( dQ / In_bl ) , np.abs( dQ / In_sl ) )
+        
+        if (In_bl_abs > 1e-8) and (In_bl_abs > 1e-8):
+            dt = dt_ref * 5.0
+        elif (In_bl_abs > 1e-9) and (In_bl_abs > 1e-9):
+            dt = dt_ref * 0.5
+        else:
+            dt = dt_ref * 0.1
 
         # change in charge
         dQn_bl, dQp_bl = In_bl * dt, Ip_bl * dt
@@ -1308,9 +1316,8 @@ for WL_bias in WL_sweep_range:
         
     # CPU time
     end = time.time()
-    output_string = ' CPU time %.3f sec (%s),%i, %.2f, %.2e, %.2e,\n   %.2e,%.2e, %.2e,%.2e\n' % \
-                    (end-start, time.ctime(), each_time_index, WL_bias, each_time, dt, \
-                     In_bl, In_sl, Qn_bl, Qn_sl)
+    output_string = '%i,%.2f,%.2e,%.2e, %.2e,%.2e, %.2e,%.2e\n   CPU time %.3f sec (%s)\n' % \
+                    (each_time_index, WL_bias, each_time, dt, In_bl, In_sl, Qn_bl, Qn_sl, end-start, time.ctime() )
     print(output_string)
     
     # Poisson equation solver & Continuity equation solver check
