@@ -1206,6 +1206,42 @@ class SOLVER(GRID):
         # CPU time
         return end-start
 
+    # ===== calculate surface induced charge on channel (MIM model only)  =====
+    def cal_channel_induced_charge(self, mat_no_ch, mat_no_tox):
+        # charge profile, mat_no profile, Z direction profile
+        Q_profile = []
+        mat_no_profile = []
+        Z_profile = []
+        
+        # sweep Z
+        for each_z in range(1, self.Z_elmts_len):
+            # sweep R
+            for each_r in range(1, self.R_elmts_len-1):
+                # finding channel - TOX interface
+                if (self.RZ_MATno[each_r-1, each_z] == mat_no_ch) and (self.RZ_MATno[each_r, each_z] == mat_no_tox):
+                    # electric displacement
+                    ep_tox = self.RZ_EP[each_r, each_z]
+                    E_tox  = self.E_mim[each_r, each_z]
+                    D_tox  = ep_tox * E_tox
+                    # geometry
+                    r    = self.RZ_R[each_r, each_z]
+                    z    = self.RZ_Z[each_r, each_z]
+                    dz   = self.RZ_dZ[each_r, each_z]
+                    area = 2.0 * np.pi * r * dz
+                    # dQ, charge profile
+                    dQ = D_tox * area
+                    Q_profile.append(dQ)
+                    # mat_no profile
+                    mat_no = self.RZ_MATno[self.R_elmts_len-1, each_z]
+                    mat_no_profile.append(mat_no)
+                    # Z direction profile
+                    Z_profile.append(z)
+                    
+        # total charge
+        Q = np.sum(Q_profile)
+        
+        return [Q, Q_profile, mat_no_profile, Z_profile]
+
     # ===== making N P matrix  =====
     def make_N_P_matrix(self, dt):
         # CPU time
@@ -1438,28 +1474,30 @@ cpu_time_2 = grid_solver.set_unit_cell_R_grid(inward_thk_dr=uc_inward_thk_dr, ou
 cpu_time_3 = grid_solver.set_unit_cell_Z_grid(z_on_thk_dz=uc_z_on_thk_dz, z_offset=0.0)
 cpu_time_4 = grid_solver.set_unit_cell_RZ_grid()
 cpu_time_5 = grid_solver.set_unit_cell_RZ_mis_region()
-
-plt.imshow(grid_solver.RZ_R, origin='lower')
-plt.imshow(grid_solver.RZ_Z, origin='lower')
-plt.imshow(grid_solver.RZ_EP, origin='lower')
-plt.imshow(grid_solver.RZ_MATno, origin='lower')
-plt.show()
-
 cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
 cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
 cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e20])
 cpu_time_9 = grid_solver.make_poisson_matrix()
 
-ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                                                         # channel ext. bias
+mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                                                         # channel ext. bias
 for each_wl in range(wl_ea):
     each_wl_mat_no = 100 + each_wl
-    ext_bias.update({each_wl_mat_no:1.0})                                               # WL ext. bias
-grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIM')
+    mim_ext_bias.update({each_wl_mat_no:0.1})                                               # WL ext. bias
+grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
 
 grid_solver.solve_poisson_equation(model_type='MIM')
+induced_Q, induced_Q_profile, mat_no_profile, Z_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
+print(mim_ext_bias, induced_Q)
 
 plt.imshow(grid_solver.V2_mim, origin='lower')
 plt.imshow(grid_solver.E_mim, origin='lower')
+plt.show()
+
+fig, ax = plt.subplots(2,1)
+ax[0].plot(Z_profile, induced_Q_profile)
+ax[0].grid(ls=':')
+ax[1].plot(Z_profile, mat_no_profile)
+ax[1].grid(ls=':')
 plt.show()
 
 cpu_time_10 = grid_solver.make_continuity_matrix()
