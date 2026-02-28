@@ -33,6 +33,13 @@ class GRID:
         self.Ez = []        # electric field z direction 2D
         self.EB = []        # external bias vector
         self.FC = []        # fixed charge density vector
+        self.V1_mim = []        # electric potential 1D (sparse matrix solution)
+        self.V2_mim = []        # electric potential 2D
+        self.E_mim  = []        # electric field magnitude 2D
+        self.Er_mim = []        # electric field r direction 2D
+        self.Ez_mim = []        # electric field z direction 2D
+        self.EB_mim = []        # external bias vector
+        self.FC_mim = []        # fixed charge density vector
         
         # semiconductor continuity equation (1950) solution (for SOLVER class)
         self.n1 = []        # electron density 1D (sparse matrix solution)
@@ -565,22 +572,38 @@ class GRID:
 
         # CPU time
         return end-start
-        
+
     # ===== making poisson matrix  =====
     def make_poisson_matrix(self):
         # CPU time
         start = time.time()
         
         # STEP0: making sparse matrix
-        self.PM = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
+        PM_shape = (self.RZ_nodes_len, self.RZ_nodes_len)
+        self.PM = sc.sparse.dok_matrix( PM_shape )
+        self.PM_mim = sc.sparse.dok_matrix( PM_shape )
 
         # STEP1: dirichlet boundary conditions (electrodes)
-        for each_mat_no in self.RZ_MIS['M'].keys():
-            for each_r, each_z in self.RZ_MIS['M'][each_mat_no]:
-                # 1D serialization index
-                index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
-                # sparse matrix (dirichlet conditions)
-                self.PM[index_r_z, index_r_z] += 1.0
+        for each_mat_type in ['M', 'S']:
+            for each_mat_no in self.RZ_MIS[each_mat_type].keys():
+                for each_r, each_z in self.RZ_MIS[each_mat_type][each_mat_no]:
+                    
+                    # 1D serialization index
+                    index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
+
+                    # for MIS model
+                    if each_mat_type in ['M']:
+                        # if not assigned
+                        if self.PM[index_r_z, index_r_z] == 0.0:
+                            # sparse matrix (dirichlet conditions)
+                            self.PM[index_r_z, index_r_z] += 1.0
+                    
+                    # for MIM model: 'S' -> 'M'
+                    if each_mat_type in ['M', 'S']:
+                        # if not assigned
+                        if self.PM_mim[index_r_z, index_r_z] == 0.0:
+                            # sparse matrix (dirichlet conditions)
+                            self.PM_mim[index_r_z, index_r_z] += 1.0
 
         # STEP2: neumann boundary conditions (Z boundaries)
         for each_z in [0, self.Z_nodes_len-1]:
@@ -592,7 +615,7 @@ class GRID:
                 index_r_zm1 = self.R_nodes_len * (each_z-1) + (each_r+0)
                 index_r_zp1 = self.R_nodes_len * (each_z+1) + (each_r+0)
                 
-                # if not assigned
+                # if not assigned (for MIS model)
                 if self.PM[index_r_z, index_r_z] == 0.0:
                     
                     # Z = 0 boundary
@@ -671,6 +694,85 @@ class GRID:
                         self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
                         self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
 
+                # if not assigned (for MIM model)
+                if self.PM_mim[index_r_z, index_r_z] == 0.0:
+                    
+                    # Z = 0 boundary
+                    if (each_z == 0) and (each_r == 0):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zp1] += -1.0
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rp1_z] += -1.0
+                    elif (each_z == 0) and (each_r == (self.R_nodes_len-1)):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zp1] += -1.0
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rm1_z] += -1.0
+                    elif (each_z == 0):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zp1] += -1.0
+                        # geometry factors in r direction
+                        geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
+                        geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
+                        geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        # 2nd derivatives
+                        geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
+                        geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
+                        geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        # electric permittivity z-1 (invalid) -> z+0
+                        ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r-1,each_z+0])/2.0
+                        ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                        # elements
+                        pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
+                        pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        # sparse matrix (poisson equation)
+                        self.PM_mim[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
+                        self.PM_mim[index_r_z, index_rm1_z] += -pm_rm1_z
+                        self.PM_mim[index_r_z, index_rp1_z] += -pm_rp1_z
+                        
+                    # Z = -1 boundary
+                    if (each_z == (self.Z_nodes_len-1)) and (each_r == 0):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zm1] += -1.0
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rp1_z] += -1.0
+                    elif (each_z == (self.Z_nodes_len-1)) and (each_r == (self.R_nodes_len-1)):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zm1] += -1.0
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rm1_z] += -1.0
+                    elif (each_z == (self.Z_nodes_len-1)):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zm1] += -1.0
+                        # geometry factors in r direction
+                        geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
+                        geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
+                        geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        # 2nd derivatives
+                        geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
+                        geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
+                        geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        # electric permittivity: z+0 (invalid) -> z-1
+                        ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z-1])/2.0
+                        ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
+                        # elements
+                        pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
+                        pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        #  sparse matrix (poisson equation)
+                        self.PM_mim[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
+                        self.PM_mim[index_r_z, index_rm1_z] += -pm_rm1_z
+                        self.PM_mim[index_r_z, index_rp1_z] += -pm_rp1_z
+
         # STEP3: neumann boundary conditions (R boundaries)
         for each_r in [0, self.R_nodes_len-1]:
             for each_z in range(self.Z_nodes_len):
@@ -681,7 +783,7 @@ class GRID:
                 index_r_zm1 = self.R_nodes_len * (each_z-1) + (each_r+0)
                 index_r_zp1 = self.R_nodes_len * (each_z+1) + (each_r+0)
                 
-                # if not assigned
+                # if not assigned (MIS model)
                 if self.PM[index_r_z, index_r_z] == 0.0:
                     
                     # R = 0 boundary
@@ -756,6 +858,81 @@ class GRID:
                         self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
                         self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
 
+                # if not assigned (MIM model)
+                if self.PM_mim[index_r_z, index_r_z] == 0.0:
+                    
+                    # R = 0 boundary
+                    if (each_r == 0) and (each_z == 0):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rp1_z] += -1.0
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zp1] += -1.0
+                    elif (each_r == 0) and (each_z == (self.Z_nodes_len-1)):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rp1_z] += -1.0
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zm1] += -1.0
+                    elif (each_r == 0):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rp1_z] += -1.0
+                        # geometry factors in r direction
+                        #geometry_effect_r_zm1  = 1.0
+                        #geometry_effect_r_zp1  = 1.0
+                        # 2nd derivatives
+                        #geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+0]-self.RZ_Z[each_r+0,each_z-1])
+                        #geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                        #geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
+                        #geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                        # electric permittivity: r-1 (invalid) -> r+0
+                        #ep_r_avg_zm1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
+                        #ep_r_avg_zp1 = (self.RZ_EP[each_r+0,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                        # elements
+                        #pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
+                        #pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
+                        # sparse matrix (poission equation)
+                        #self.PM[index_r_z, index_r_z  ] += +pm_r_zm1 + pm_r_zp1
+                        #self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
+                        #self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
+                        
+                    # R = -1 boundary
+                    if (each_r == (self.R_nodes_len-1)) and (each_z == 0):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rm1_z] += -1.0
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zp1] += -1.0
+                    elif (each_r == (self.R_nodes_len-1)) and (each_z == (self.Z_nodes_len-1)):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rm1_z] += -1.0
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_r_zm1] += -1.0
+                    elif (each_r == (self.R_nodes_len-1)):
+                        # sparse matrix (neumann conditions)
+                        self.PM_mim[index_r_z, index_r_z  ] += +1.0
+                        self.PM_mim[index_r_z, index_rm1_z] += -1.0
+                        # geometry factors in r direction
+                        geometry_effect_r_zm1  = 1.0
+                        geometry_effect_r_zp1  = 1.0
+                        # 2nd derivatives
+                        geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+0]-self.RZ_Z[each_r+0,each_z-1])
+                        geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                        geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
+                        geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                        # electric permittivity: r+0 (invalid) -> r-1
+                        ep_r_avg_zm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z-1])/2.0
+                        ep_r_avg_zp1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r-1,each_z+0])/2.0
+                        # elements
+                        pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
+                        pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
+                        #  sparse matrix (poission equation)
+                        self.PM_mim[index_r_z, index_r_z  ] += +pm_r_zm1 + pm_r_zp1
+                        self.PM_mim[index_r_z, index_r_zm1] += -pm_r_zm1
+                        self.PM_mim[index_r_z, index_r_zp1] += -pm_r_zp1
+
         # STEP4: inside boundary conditions
         for each_r in range(1, self.R_nodes_len-1):
             for each_z in range(1, self.Z_nodes_len-1):
@@ -766,7 +943,7 @@ class GRID:
                 index_r_zm1 = self.R_nodes_len * (each_z-1) + (each_r+0)
                 index_r_zp1 = self.R_nodes_len * (each_z+1) + (each_r+0)
                 
-                # if not assigned
+                # if not assigned (MIS model)
                 if self.PM[index_r_z, index_r_z] == 0.0:
                     
                     # geometry factors in r direction
@@ -801,15 +978,54 @@ class GRID:
                     self.PM[index_r_z, index_rp1_z] += -pm_rp1_z
                     self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
                     self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
+
+            # if not assigned (MIM model)
+                if self.PM_mim[index_r_z, index_r_z] == 0.0:
+                    
+                    # geometry factors in r direction
+                    geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
+                    geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
+                    geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
+                    geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                    geometry_effect_r_zm1  = 1.0
+                    geometry_effect_r_zp1  = 1.0
+                    # 2nd derivatives
+                    geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
+                    geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                    geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
+                    geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                    geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+0]-self.RZ_Z[each_r+0,each_z-1])
+                    geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                    geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
+                    geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                    # electric permittivity
+                    ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z+0])/2.0
+                    ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                    ep_r_avg_zm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
+                    ep_r_avg_zp1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                    # elements
+                    pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
+                    pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                    pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
+                    pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
+                    # sparse matrix (poisson equation)
+                    self.PM_mim[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z + pm_r_zm1 + pm_r_zp1
+                    self.PM_mim[index_r_z, index_rm1_z] += -pm_rm1_z
+                    self.PM_mim[index_r_z, index_rp1_z] += -pm_rp1_z
+                    self.PM_mim[index_r_z, index_r_zm1] += -pm_r_zm1
+                    self.PM_mim[index_r_z, index_r_zp1] += -pm_r_zp1
         
         # sparse matrix
         self.PMcsr = self.PM.tocsr()
+        self.PM_mimcsr = self.PM_mim.tocsr()
 
         # external bias vector initialization
         self.EB = np.zeros(self.RZ_nodes_len)
+        self.EB_mim = np.zeros(self.RZ_nodes_len)
 
         # fixed charge density vector initialization
         self.FC = np.zeros(self.RZ_nodes_len)
+        self.FC_mim = np.zeros(self.RZ_nodes_len)
 
         # CPU time
         end = time.time()
@@ -853,25 +1069,47 @@ class GRID:
 class SOLVER(GRID):
 
     # ===== making external bias vector  =====
-    def make_external_bias_vector(self, external_bias_conditions, workfunction):
+    def make_external_bias_vector(self, external_bias_conditions, workfunction, model_type):
         # CPU time
         start = time.time()
-        
-        # sweep material type
-        for each_mat_mis in ['M']:
-            for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
-                # check points
-                for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
-                    # 1D serialization index
-                    index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
-                    # external bias @metal contact
-                    if (each_mat_no != 10001) and (each_mat_no != 10002):
-                        self.EB[index_r_z]  = 4.05 + 1.12 / 2.0 - workfunction
-                        self.EB[index_r_z] += external_bias_conditions[each_mat_no]
-                    # external bias @BL, SL contact
-                    else:
-                        self.EB[index_r_z]  = -self.Vbi[index_r_z]
-                        self.EB[index_r_z] += external_bias_conditions[each_mat_no]
+
+        # MIS model
+        if model_type == 'MIS':
+            
+            # sweep material type
+            for each_mat_mis in ['M']:
+                for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                    # check points
+                    for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
+                        # 1D serialization index
+                        index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
+                        
+                        # external bias @metal contact
+                        if (each_mat_no != 10001) and (each_mat_no != 10002):
+                            self.EB[index_r_z]  = 4.05 + 1.12 / 2.0 - workfunction
+                            self.EB[index_r_z] += external_bias_conditions[each_mat_no]
+                        # external bias @BL, SL contact
+                        else:
+                            self.EB[index_r_z]  = -self.Vbi[index_r_z]
+                            self.EB[index_r_z] += external_bias_conditions[each_mat_no]
+
+        # MIM model: 'S' -> 'M'
+        if model_type == 'MIM':
+            
+            # sweep material type
+            for each_mat_mis in ['M', 'S']:
+                for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                    # check points
+                    for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
+                        # 1D serialization index
+                        index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
+
+                        # external bias @metal contact
+                        if each_mat_mis == 'M':
+                            self.EB_mim[index_r_z] = external_bias_conditions[each_mat_no]
+                        # external bias @channel
+                        if each_mat_mis == 'S':
+                            self.EB_mim[index_r_z] = external_bias_conditions[each_mat_no]
 
         # CPU time
         end = time.time()
@@ -880,21 +1118,39 @@ class SOLVER(GRID):
         return end-start
 
     # ===== making fixed charge vector  =====
-    def make_fixed_charge_vector(self, fixed_charge_density):
+    def make_fixed_charge_vector(self, fixed_charge_density, model_type):
         # CPU time
         start = time.time()
-        
-        # sweep material type
-        for each_mat_mis in ['I', 'S']:
-            for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
-                # check material number
-                if each_mat_no in fixed_charge_density.keys():
-                    # check points
-                    for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
-                        # 1D serialization index
-                        index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
-                        # fixed charge density 
-                        self.FC[index_r_z] = fixed_charge_density[each_mat_no]
+
+        # MIS model
+        if model_type == 'MIS':
+            
+            # sweep material type
+            for each_mat_mis in ['I', 'S']:
+                for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                    # check material number
+                    if each_mat_no in fixed_charge_density.keys():
+                        # check points
+                        for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
+                            # 1D serialization index
+                            index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
+                            # fixed charge density 
+                            self.FC[index_r_z] = fixed_charge_density[each_mat_no]
+
+        # MIM model
+        if model_type == 'MIM':
+            
+            # sweep material type
+            for each_mat_mis in ['I']:
+                for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                    # check material number
+                    if each_mat_no in fixed_charge_density.keys():
+                        # check points
+                        for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
+                            # 1D serialization index
+                            index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
+                            # fixed charge density 
+                            self.FC_mim[index_r_z] = fixed_charge_density[each_mat_no]
 
         # CPU time
         end = time.time()
@@ -903,31 +1159,46 @@ class SOLVER(GRID):
         return end-start
 
     # ===== solving poisson equation  =====
-    def solve_poisson_equation(self):
+    def solve_poisson_equation(self, model_type):
         # CPU time
         start = time.time()
-        
-        # sparse matrix solver for poisson equation
-        self.V1 = sc.sparse.linalg.spsolve(self.PMcsr, self.EB + self.q*(self.FC + self.p1 - self.n1 + self.DP) )
 
-        # 2D visualization
-        self.V2 = self.V1.reshape(self.Z_nodes_len, self.R_nodes_len).T
-        self.Er = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.RZ_dR
-        self.Ez = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.RZ_dZ
-        self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
-        
-        # post processing 1 (for continuity equations)
-        self.dVr_f = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.Vtm
-        self.dVr_b = ( self.V2[:-1,:] - self.V2[1:,:] ) / self.Vtm
-        self.dVz_f = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.Vtm
-        self.dVz_b = ( self.V2[:,:-1] - self.V2[:,1:] ) / self.Vtm
+        # for MIS model
+        if model_type == 'MIS':
+            
+            # sparse matrix solver for poisson equation
+            self.V1 = sc.sparse.linalg.spsolve( self.PMcsr, self.EB + self.q*(self.FC + self.p1 - self.n1 + self.DP) )
 
-        # post processing 2 (for continuity equations)
-        B_tol = 1e-10
-        self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f) - 1.0 ), 1.0)
-        self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b) - 1.0 ), 1.0)
-        self.Bz_f = np.where( np.abs(self.dVz_f) > B_tol, self.dVz_f / ( np.exp(self.dVz_f) - 1.0 ), 1.0)
-        self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b) - 1.0 ), 1.0)
+            # 2D visualization
+            self.V2 = self.V1.reshape(self.Z_nodes_len, self.R_nodes_len).T
+            self.Er = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.RZ_dR
+            self.Ez = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.RZ_dZ
+            self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
+            
+            # post processing 1 (for continuity equations)
+            self.dVr_f = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.Vtm
+            self.dVr_b = ( self.V2[:-1,:] - self.V2[1:,:] ) / self.Vtm
+            self.dVz_f = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.Vtm
+            self.dVz_b = ( self.V2[:,:-1] - self.V2[:,1:] ) / self.Vtm
+
+            # post processing 2 (for continuity equations)
+            B_tol = 1e-10
+            self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f) - 1.0 ), 1.0)
+            self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b) - 1.0 ), 1.0)
+            self.Bz_f = np.where( np.abs(self.dVz_f) > B_tol, self.dVz_f / ( np.exp(self.dVz_f) - 1.0 ), 1.0)
+            self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b) - 1.0 ), 1.0)
+
+        # for MIM model
+        if model_type == 'MIM':
+
+            # sparse matrix solver for poisson equation
+            self.V1_mim = sc.sparse.linalg.spsolve( self.PM_mimcsr, self.EB_mim + self.q*self.FC_mim )
+
+            # 2D visualization
+            self.V2_mim = self.V1_mim.reshape(self.Z_nodes_len, self.R_nodes_len).T
+            self.Er_mim = ( self.V2_mim[1:,:] - self.V2_mim[:-1,:] ) / self.RZ_dR
+            self.Ez_mim = ( self.V2_mim[:,1:] - self.V2_mim[:,:-1] ) / self.RZ_dZ
+            self.E_mim  = np.sqrt( self.Er_mim[:,:-1]**2 + self.Ez_mim[:-1,:]**2 )
 
         # CPU time
         end = time.time()
@@ -1167,10 +1438,30 @@ cpu_time_2 = grid_solver.set_unit_cell_R_grid(inward_thk_dr=uc_inward_thk_dr, ou
 cpu_time_3 = grid_solver.set_unit_cell_Z_grid(z_on_thk_dz=uc_z_on_thk_dz, z_offset=0.0)
 cpu_time_4 = grid_solver.set_unit_cell_RZ_grid()
 cpu_time_5 = grid_solver.set_unit_cell_RZ_mis_region()
+
+plt.imshow(grid_solver.RZ_R, origin='lower')
+plt.imshow(grid_solver.RZ_Z, origin='lower')
+plt.imshow(grid_solver.RZ_EP, origin='lower')
+plt.imshow(grid_solver.RZ_MATno, origin='lower')
+plt.show()
+
 cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
 cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
 cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e20])
 cpu_time_9 = grid_solver.make_poisson_matrix()
+
+ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                                                         # channel ext. bias
+for each_wl in range(wl_ea):
+    each_wl_mat_no = 100 + each_wl
+    ext_bias.update({each_wl_mat_no:1.0})                                               # WL ext. bias
+grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIM')
+
+grid_solver.solve_poisson_equation(model_type='MIM')
+
+plt.imshow(grid_solver.V2_mim, origin='lower')
+plt.imshow(grid_solver.E_mim, origin='lower')
+plt.show()
+
 cpu_time_10 = grid_solver.make_continuity_matrix()
 
 # poisson equation solver
@@ -1280,12 +1571,24 @@ for WL_bias in WL_sweep_range:
         In_bl_abs, In_sl_abs = np.abs(In_bl), np.abs(In_sl)
         dt_ref = np.minimum( np.abs( dQ / In_bl ) , np.abs( dQ / In_sl ) )
         
-        if (In_bl_abs > 1e-8) and (In_bl_abs > 1e-8):
+        if (In_bl_abs > 5e-8) and (In_bl_abs > 5e-8):
             dt = dt_ref * 5.0
-        elif (In_bl_abs > 1e-9) and (In_bl_abs > 1e-9):
+        elif (In_bl_abs > 4e-8) and (In_bl_abs > 4e-8):
+            dt = dt_ref * 4.0
+        elif (In_bl_abs > 3e-8) and (In_bl_abs > 3e-8):
+            dt = dt_ref * 3.0
+        elif (In_bl_abs > 2e-8) and (In_bl_abs > 2e-8):
+            dt = dt_ref * 2.0
+        elif (In_bl_abs > 1e-8) and (In_bl_abs > 1e-8):
+            dt = dt_ref * 1.0
+        elif (In_bl_abs > 5e-9) and (In_bl_abs > 5e-9):
             dt = dt_ref * 0.5
-        else:
+        elif (In_bl_abs > 1e-9) and (In_bl_abs > 1e-9):
             dt = dt_ref * 0.1
+        elif (In_bl_abs > 5e-10) and (In_bl_abs > 5e-10):
+            dt = dt_ref * 0.05
+        else:
+            dt = dt_ref * 0.01
 
         # change in charge
         dQn_bl, dQp_bl = In_bl * dt, Ip_bl * dt
@@ -1325,6 +1628,8 @@ for WL_bias in WL_sweep_range:
     #      (np.min(grid_solver.V1), np.max(grid_solver.V1), \
     #       np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
     #       np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+    
+
     
 
 
