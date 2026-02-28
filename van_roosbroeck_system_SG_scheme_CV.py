@@ -10,6 +10,7 @@ import sys, time, copy, psutil, platform, cpuinfo
 import numpy as np
 import scipy as sc
 import sympy as sp
+import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 
 #
@@ -22,6 +23,9 @@ class GRID:
     q = 1.60217663e-19      # electron charge, [C]
     kb = 1.380649e-23       # Boltzmann constant, [m]^2 [kg] [K]^-1 [s]^-2 
     ep0 = 8.854187e-12      # elelctric permittivity of free space, [F] [m]^-1
+    me = 9.1093837e-31      # electron mass, [kg]
+    h = 6.62607015e-34      # Planck constant, [m]^2 [kg] [s]^-1
+    hbar = h / (2.0*np.pi)
     
     # ===== constructor =====
     def __init__(self):
@@ -298,6 +302,20 @@ class GRID:
         for each_z_elmt in range(self.Z_elmts_len):
             self.RZ_MATno[:,each_z_elmt] = copy.copy( self.Z_MAT_no[each_z_elmt] )      # stacking in Z direction
 
+        # 2D array (conduction band diagram)
+        self.CB_ref    = np.zeros([self.R_elmts_len, self.Z_elmts_len])                 # R elements, Z elements
+        self.CB_offset = np.zeros([self.R_elmts_len, self.Z_elmts_len])                 # R elements, Z elements
+        #
+        for mat_name in self.MAT.keys():
+            # mat info
+            mat_no    = self.MAT[mat_name]['mat_no']
+            cb_offset = self.MAT[mat_name]['cb']
+            #
+            if (mat_no == 11) or (mat_no == 10):
+                pass
+            else:
+                self.CB_offset += np.where( self.RZ_MATno == mat_no, cb_offset, 0.0 )
+
         # CPU time
         end = time.time()
 
@@ -310,7 +328,8 @@ class GRID:
         start = time.time()
         
         # making dictionary
-        self.RZ_MIS = {}
+        self.RZ_MIS = {}                    # list of (r, z) tuple 
+        self.RZ_MIS_index_min_max = {}      # index min, max
 
         # making edge points set (RZ bondaries)
         edge_points_set = set()
@@ -326,15 +345,25 @@ class GRID:
             # check each mat_mis key
             if each_mat_mis not in self.RZ_MIS.keys():
                 self.RZ_MIS[each_mat_mis] = {}
+                self.RZ_MIS_index_min_max[each_mat_mis] = {}
                 
             # sweep mat_no (integer) list (second key)
             for each_mat_no in self.MIS_MAT_no[each_mat_mis]:
                 # check each mat_no array
                 if each_mat_no not in self.RZ_MIS[each_mat_mis].keys():
                     self.RZ_MIS[each_mat_mis][each_mat_no] = set()
+                    self.RZ_MIS_index_min_max[each_mat_mis][each_mat_no] = {}
+                    self.RZ_MIS_index_min_max[each_mat_mis][each_mat_no]['r'] = []
+                    self.RZ_MIS_index_min_max[each_mat_mis][each_mat_no]['z'] = []
                     
                 # get specific R, Z coordinates array in self.RZ_MATno array (elements) having the same each mat_no
                 r_index_array, z_index_array = np.where( self.RZ_MATno == each_mat_no )
+
+                # calculating R, Z index min. max.
+                r_index_array_min, r_index_array_max = np.min( r_index_array ), np.max( r_index_array )
+                z_index_array_min, z_index_array_max = np.min( z_index_array ), np.max( z_index_array )
+                self.RZ_MIS_index_min_max[each_mat_mis][each_mat_no]['r'] = [r_index_array_min, r_index_array_max]
+                self.RZ_MIS_index_min_max[each_mat_mis][each_mat_no]['z'] = [z_index_array_min, z_index_array_max]
                 
                 # mapping: 1 element -> 4 nodes (2D structure)
                 for each_point in range(len(r_index_array)):
@@ -345,8 +374,8 @@ class GRID:
                     self.RZ_MIS[each_mat_mis][each_mat_no].add( ( r_index_array[each_point]+1, z_index_array[each_point]+1 ) )
 
         # set difference: I - edge points set (excluing RZ boundaries, neumann BC)
-        for tg_mat_no in self.MIS_MAT_no['I']:
-            self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(edge_points_set)
+        #for tg_mat_no in self.MIS_MAT_no['I']:
+        #    self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(edge_points_set)
         
         # set difference: I - M (electrodes, dirichlet BC)
         for tg_mat_no in self.MIS_MAT_no['I']:
@@ -893,9 +922,9 @@ class GRID:
                         #pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
                         #pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
                         # sparse matrix (poission equation)
-                        #self.PM[index_r_z, index_r_z  ] += +pm_r_zm1 + pm_r_zp1
-                        #self.PM[index_r_z, index_r_zm1] += -pm_r_zm1
-                        #self.PM[index_r_z, index_r_zp1] += -pm_r_zp1
+                        #self.PM_mim[index_r_z, index_r_z  ] += +pm_r_zm1 + pm_r_zp1
+                        #self.PM_mim[index_r_z, index_r_zm1] += -pm_r_zm1
+                        #self.PM_mim[index_r_z, index_r_zp1] += -pm_r_zp1
                         
                     # R = -1 boundary
                     if (each_r == (self.R_nodes_len-1)) and (each_z == 0):
@@ -1242,6 +1271,79 @@ class SOLVER(GRID):
         
         return [Q, Q_profile, mat_no_profile, Z_profile]
 
+    # ===== calculate tunneling probability (MIM model only)  =====
+    def cal_tunneling_probability(self, mat_no_tox, meff):
+        # WKB approximation profile, mat_no profile, Z direction profile
+        WKB_profile = []
+        WKB_length_profile = []
+        mat_no_profile = []
+        Z_profile = []
+        
+        # conduction band offset
+        CB_offset = self.CB_offset - self.V2_mim[:-1,:-1]
+        
+        # sweep Z
+        for each_z in range(1, self.Z_elmts_len):
+            # Z direction position
+            Z_profile.append( self.RZ_Z[0, each_z] )
+            # mat_no profile
+            mat_no = self.RZ_MATno[self.R_elmts_len-1, each_z]
+            mat_no_profile.append(mat_no)
+            
+            # WKB approximation
+            WKB_approx = 0.0
+            WKB_length = 0
+            # sweep R
+            for each_r in range(1, self.R_elmts_len-1):
+                # finding TOX
+                if self.RZ_MATno[each_r, each_z] == mat_no_tox:
+                    # decaying region
+                    if CB_offset[each_r, each_z] > 0.0:
+                        # distance
+                        dr = ( self.RZ_R[each_r+1, each_z] - self.RZ_R[each_r, each_z] )
+                        WKB_length += dr
+                        # conduction band electron Tunneling only
+                        WKB_approx += np.sqrt( 2.0 * (self.me * meff) * CB_offset[each_r, each_z] * self.q ) * dr  
+            #
+            WKB_approx = np.exp( -2.0 / self.hbar * WKB_approx)
+            WKB_profile.append( WKB_approx )
+            WKB_length_profile.append( WKB_length ) 
+            
+        #
+        return [WKB_profile, WKB_length_profile, mat_no_profile, Z_profile]
+
+    # ===== plot conduction band diagram  =====
+    def plot_conduction_band_diagram(self, output_filename, model_type):
+
+        # MIM model
+        if model_type == 'MIM':
+            # geometry
+            R = self.RZ_R[60:-1,:-1]
+            Z = self.RZ_Z[60:-1,:-1]
+            # 
+            CB_offset = self.CB_offset[60:,:] - self.V2_mim[60:-1,:-1]
+            wl_bias = np.max( self.V2_mim )
+            # visualization
+            fig, ax = plt.subplots(1, 3)    # subplot_kw={"projection": "3d"}
+            # visualization
+            ax[0].imshow(self.V2_mim[60:-1,:-1], origin='lower')
+            ax[0].set_axis_off()
+            ax[0].grid(ls=':')
+            ax[1].imshow(self.E_mim[60:-1,:-1], origin='lower')
+            ax[1].set_axis_off()
+            ax[1].grid(ls=':')
+            #ax.plot_surface(R, Z, CB_offset, linewidth=5, vmin=0.0, cmap=cm.coolwarm)
+            ax[2].contourf(Z.T, R.T, CB_offset.T, linewidth=5, levels=[-wl_bias, 0.0], colors='k' )    # cmap=cm.coolwarm
+            ax[2].set_axis_off()
+            ax[2].grid(ls=':')
+            plt.axis('equal')
+            plt.savefig(output_filename)
+            plt.show()
+            
+        # MIS model
+        if model_type == 'MIS':
+            CB_offset = self.CB_offset[:,:] - self.V2[:-1,:-1]
+
     # ===== making N P matrix  =====
     def make_N_P_matrix(self, dt):
         # CPU time
@@ -1414,19 +1516,19 @@ wl_ea = 1
 
 # material para
 mat_para_dictionary = {}
-mat_para_dictionary['TOX']       = {'mat_no':30,  'type':'I', 'k':4.8,  'qf':0.0}
-mat_para_dictionary['CTN']       = {'mat_no':31,  'type':'I', 'k':7.5,  'qf':0.0}
-mat_para_dictionary['BOX_SIO2']  = {'mat_no':32,  'type':'I', 'k':5.0,  'qf':0.0}
-mat_para_dictionary['BOX_AL2O3'] = {'mat_no':33,  'type':'I', 'k':9.0,  'qf':0.0}
-mat_para_dictionary['LINER']     = {'mat_no':11,  'type':'I', 'k':3.9,  'qf':0.0}
-mat_para_dictionary['VOID']      = {'mat_no':10,  'type':'I', 'k':1.0,  'qf':0.0}
-mat_para_dictionary['ON_SIO2']   = {'mat_no':34,  'type':'I', 'k':3.9,  'qf':0.0}
-mat_para_dictionary['SI']        = {'mat_no':20,  'type':'S', 'k':11.7, 'qf':0.0, \
+mat_para_dictionary['TOX']       = {'mat_no':30,  'type':'I', 'k':4.8,  'qf':0.0, 'cb':3.10}
+mat_para_dictionary['CTN']       = {'mat_no':31,  'type':'I', 'k':7.5,  'qf':0.0, 'cb':2.10}
+mat_para_dictionary['BOX_SIO2']  = {'mat_no':32,  'type':'I', 'k':5.0,  'qf':0.0, 'cb':3.10}
+mat_para_dictionary['BOX_AL2O3'] = {'mat_no':33,  'type':'I', 'k':9.0,  'qf':0.0, 'cb':2.80}
+mat_para_dictionary['LINER']     = {'mat_no':11,  'type':'I', 'k':3.9,  'qf':0.0, 'cb':3.10}
+mat_para_dictionary['VOID']      = {'mat_no':10,  'type':'I', 'k':1.0,  'qf':0.0, 'cb':4.05}
+mat_para_dictionary['ON_SIO2']   = {'mat_no':34,  'type':'I', 'k':3.9,  'qf':0.0, 'cb':3.10}
+mat_para_dictionary['SI']        = {'mat_no':20,  'type':'S', 'k':11.7, 'qf':0.0, 'cb':0.00, \
                                     'n_int':1.5e16, 'mu_n':0.14, 'mu_p':0.045, 'tau_n':1e-6, 'tau_p':1e-5}
 for each_wl in range(wl_ea):
     each_wl_name = 'WL%03i' % each_wl
     each_wl_no   = 100 + each_wl
-    mat_para_dictionary[each_wl_name]    = {'mat_no':each_wl_no, 'type':'M', 'k':1e5,  'qf':0.0, 'wf':4.8}
+    mat_para_dictionary[each_wl_name]    = {'mat_no':each_wl_no, 'type':'M', 'k':1e5,  'qf':0.0, 'cb':0.0, 'wf':4.8}
 
 # inside plug
 uc_inward_thk_dr = {}
@@ -1479,26 +1581,40 @@ cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coo
 cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e20])
 cpu_time_9 = grid_solver.make_poisson_matrix()
 
-mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                                                         # channel ext. bias
+mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                           # channel ext. bias
 for each_wl in range(wl_ea):
     each_wl_mat_no = 100 + each_wl
-    mim_ext_bias.update({each_wl_mat_no:0.1})                                               # WL ext. bias
-grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
+    mim_ext_bias.update({each_wl_mat_no:19.0})                                           # WL ext. bias
+cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
+ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
+cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIM')
 
-grid_solver.solve_poisson_equation(model_type='MIM')
+cpu_time_12 = grid_solver.solve_poisson_equation(model_type='MIM')
 induced_Q, induced_Q_profile, mat_no_profile, Z_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
+WKB_profile, WKB_length_profile, mat_no_profile, Z_profile = grid_solver.cal_tunneling_probability(mat_no_tox=30, meff=0.5)
+
 print(mim_ext_bias, induced_Q)
+print(cpu_time_9, cpu_time_10, cpu_time_11, cpu_time_12)
+print(grid_solver.RZ_MIS_index_min_max)
 
 plt.imshow(grid_solver.V2_mim, origin='lower')
 plt.imshow(grid_solver.E_mim, origin='lower')
 plt.show()
 
-fig, ax = plt.subplots(2,1)
+fig, ax = plt.subplots(5,1)
 ax[0].plot(Z_profile, induced_Q_profile)
 ax[0].grid(ls=':')
-ax[1].plot(Z_profile, mat_no_profile)
+ax[1].plot(Z_profile, WKB_length_profile)
 ax[1].grid(ls=':')
+ax[2].plot(Z_profile, WKB_profile)
+ax[2].grid(ls=':')
+ax[3].plot(Z_profile, np.array(induced_Q_profile)*np.array(WKB_profile))
+ax[3].grid(ls=':')
+ax[4].plot(Z_profile, mat_no_profile)
+ax[4].grid(ls=':')
 plt.show()
+
+grid_solver.plot_conduction_band_diagram(output_filename='19V.pdf', model_type='MIM')
 
 cpu_time_10 = grid_solver.make_continuity_matrix()
 
@@ -1666,6 +1782,8 @@ for WL_bias in WL_sweep_range:
     #      (np.min(grid_solver.V1), np.max(grid_solver.V1), \
     #       np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
     #       np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+    
+
     
 
     
