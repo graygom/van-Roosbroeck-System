@@ -1275,7 +1275,9 @@ class SOLVER(GRID):
     def cal_tunneling_probability(self, mat_no_tox, meff):
         # WKB approximation profile, mat_no profile, Z direction profile
         WKB_profile = []
+        WKB_profile2 = []
         WKB_length_profile = []
+        WKB_length_profile2 = []
         mat_no_profile = []
         Z_profile = []
         
@@ -1286,11 +1288,46 @@ class SOLVER(GRID):
         for each_z in range(1, self.Z_elmts_len):
             # Z direction position
             Z_profile.append( self.RZ_Z[0, each_z] )
+            
             # mat_no profile
             mat_no = self.RZ_MATno[self.R_elmts_len-1, each_z]
             mat_no_profile.append(mat_no)
+
+            # defining TOX region
+            r_min, r_max = self.RZ_MIS_index_min_max['I'][mat_no_tox]['r']
+            r_range = range(r_min, r_max+1)
+            delta_r = self.RZ_R[r_max+1, each_z] - self.RZ_R[r_max, each_z]
+            delta_CB_offset = CB_offset[r_max, each_z] - CB_offset[r_max-1, each_z]
             
-            # WKB approximation
+            # finding interpolation function: conduction band offset
+            RZ_R_r  = list( self.RZ_R[r_range, each_z] )
+            RZ_R_r += [ RZ_R_r[-1] + RZ_R_r[-1] - RZ_R_r[-2] ]
+            RZ_dR_r  = list( self.RZ_dR[r_range, each_z] )
+            RZ_dR_r += [ RZ_R_r[-1] - RZ_R_r[-2] ]
+            CB_offset_r  = list( CB_offset[r_range, each_z] )
+            CB_offset_r += [ CB_offset_r[-1] + CB_offset_r[-1] - CB_offset_r[-2] ]
+            CB_offset_r  = np.array( CB_offset_r )
+            CB_offset_f = sc.interpolate.interp1d(CB_offset_r, RZ_R_r, kind='cubic')
+            
+            # finding interpolation function: WKB approximation
+            WKB_approx_r = np.where( CB_offset_r > 0.0, \
+                                    np.sqrt( 2.0 * (self.me * meff) * (CB_offset_r * self.q) ), \
+                                    0.0 )
+            WKB_approx_f = sc.interpolate.interp1d(RZ_R_r, WKB_approx_r, kind='cubic')
+            
+            # finding tunneling out position
+            if CB_offset_r[-1] < 0.0:
+                r_tunneling_out = CB_offset_f( 0.0 )
+            else:
+                r_tunneling_out = RZ_R_r[-1]
+
+            # WKB approximation: case 2
+            WKB_approx_tunneling_out, error = sc.integrate.quad(WKB_approx_f, RZ_R_r[0], r_tunneling_out)
+            WKB_approx_tunneling_out = np.exp( -2.0 / self.hbar * WKB_approx_tunneling_out )
+            WKB_profile2.append( WKB_approx_tunneling_out )
+            WKB_length_profile2.append( r_tunneling_out - RZ_R_r[0] )
+            
+            # WKB approximation: case 1
             WKB_approx = 0.0
             WKB_length = 0
             # sweep R
@@ -1310,7 +1347,7 @@ class SOLVER(GRID):
             WKB_length_profile.append( WKB_length ) 
             
         #
-        return [WKB_profile, WKB_length_profile, mat_no_profile, Z_profile]
+        return [WKB_profile, WKB_profile2, WKB_length_profile, WKB_length_profile2, mat_no_profile, Z_profile]
 
     # ===== plot conduction band diagram  =====
     def plot_conduction_band_diagram(self, output_filename, model_type):
@@ -1559,7 +1596,7 @@ for each_wl in range(wl_ea):
     uc_outward_thk_dr[each_wl_name+'_ON_N2'] = {}
     uc_outward_thk_dr[each_wl_name+'_ON_N2']['BOX_AL2O3']  = {'mat_no':33,         'thk':30.0,  'dr':5.0}     # angstrom (1st layer)
     uc_outward_thk_dr[each_wl_name+'_ON_N2'][each_wl_name] = {'mat_no':each_wl_no, 'thk':70.0,  'dr':5.0}     # angstrom (2nd layer)
-    uc_z_on_thk_dz[   each_wl_name+'_ON_N2'] = {'thk':205.0, 'dz':5.0}   # angstrom
+    uc_z_on_thk_dz[   each_wl_name+'_ON_N2'] = {'thk':1005.0, 'dz':5.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_N3'] = {}
     uc_outward_thk_dr[each_wl_name+'_ON_N3']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
@@ -1584,14 +1621,14 @@ cpu_time_9 = grid_solver.make_poisson_matrix()
 mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                           # channel ext. bias
 for each_wl in range(wl_ea):
     each_wl_mat_no = 100 + each_wl
-    mim_ext_bias.update({each_wl_mat_no:19.0})                                           # WL ext. bias
+    mim_ext_bias.update({each_wl_mat_no:10.0})                                           # WL ext. bias
 cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
 ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
 cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIM')
 
 cpu_time_12 = grid_solver.solve_poisson_equation(model_type='MIM')
 induced_Q, induced_Q_profile, mat_no_profile, Z_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
-WKB_profile, WKB_length_profile, mat_no_profile, Z_profile = grid_solver.cal_tunneling_probability(mat_no_tox=30, meff=0.5)
+WKB_profile, WKB_profile2, WKB_length_profile, WKB_length_profile2, mat_no_profile, Z_profile = grid_solver.cal_tunneling_probability(mat_no_tox=30, meff=0.5)
 
 print(mim_ext_bias, induced_Q)
 print(cpu_time_9, cpu_time_10, cpu_time_11, cpu_time_12)
@@ -1605,10 +1642,13 @@ fig, ax = plt.subplots(5,1)
 ax[0].plot(Z_profile, induced_Q_profile)
 ax[0].grid(ls=':')
 ax[1].plot(Z_profile, WKB_length_profile)
+ax[1].plot(Z_profile, WKB_length_profile2)
 ax[1].grid(ls=':')
 ax[2].plot(Z_profile, WKB_profile)
+ax[2].plot(Z_profile, WKB_profile2)
 ax[2].grid(ls=':')
 ax[3].plot(Z_profile, np.array(induced_Q_profile)*np.array(WKB_profile))
+ax[3].plot(Z_profile, np.array(induced_Q_profile)*np.array(WKB_profile2))
 ax[3].grid(ls=':')
 ax[4].plot(Z_profile, mat_no_profile)
 ax[4].grid(ls=':')
