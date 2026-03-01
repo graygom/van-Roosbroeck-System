@@ -1548,10 +1548,10 @@ class SOLVER(GRID):
 # MAIN
 #
 
-# number of wls
+# number of wls (USER INPUT)
 wl_ea = 1
 
-# material para
+# material para (USER INPUT)
 mat_para_dictionary = {}
 mat_para_dictionary['TOX']       = {'mat_no':30,  'type':'I', 'k':4.8,  'qf':0.0, 'cb':3.10}
 mat_para_dictionary['CTN']       = {'mat_no':31,  'type':'I', 'k':7.5,  'qf':0.0, 'cb':2.10}
@@ -1567,7 +1567,7 @@ for each_wl in range(wl_ea):
     each_wl_no   = 100 + each_wl
     mat_para_dictionary[each_wl_name]    = {'mat_no':each_wl_no, 'type':'M', 'k':1e5,  'qf':0.0, 'cb':0.0, 'wf':4.8}
 
-# inside plug
+# inside plug (USER INPUT)
 uc_inward_thk_dr = {}
 uc_inward_thk_dr['CD']         = 1200                                       # angstrom
 uc_inward_thk_dr['BOX_SIO2']   = {'mat_no':32, 'thk':70.0,  'dr':5.0}       # angstrom (1st layer)
@@ -1577,7 +1577,7 @@ uc_inward_thk_dr['SI']         = {'mat_no':20, 'thk':70.0,  'dr':5.0}       # an
 uc_inward_thk_dr['LINER']      = {'mat_no':11, 'thk':120.0, 'dr':5.0}       # angstrom (5th layer)
 uc_inward_thk_dr['VOID']       = {'mat_no':10, 'thk':-1,    'dr':5.0}       # angstrom (6th layer)
 
-# outside plug & z stacks
+# outside plug & z stacks (USER INPUT)
 uc_outward_thk_dr = {}
 uc_z_on_thk_dz = {}
 
@@ -1596,7 +1596,7 @@ for each_wl in range(wl_ea):
     uc_outward_thk_dr[each_wl_name+'_ON_N2'] = {}
     uc_outward_thk_dr[each_wl_name+'_ON_N2']['BOX_AL2O3']  = {'mat_no':33,         'thk':30.0,  'dr':5.0}     # angstrom (1st layer)
     uc_outward_thk_dr[each_wl_name+'_ON_N2'][each_wl_name] = {'mat_no':each_wl_no, 'thk':70.0,  'dr':5.0}     # angstrom (2nd layer)
-    uc_z_on_thk_dz[   each_wl_name+'_ON_N2'] = {'thk':1005.0, 'dz':5.0}   # angstrom
+    uc_z_on_thk_dz[   each_wl_name+'_ON_N2'] = {'thk':205.0, 'dz':5.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_N3'] = {}
     uc_outward_thk_dr[each_wl_name+'_ON_N3']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
@@ -1606,7 +1606,7 @@ for each_wl in range(wl_ea):
     uc_outward_thk_dr[each_wl_name+'_ON_O2']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
     uc_z_on_thk_dz[   each_wl_name+'_ON_O2'] = {'thk':95.0,  'dz':5.0}   # angstrom
 
-# preparing grid
+# preparing grid (USER INPUT)
 grid_solver = SOLVER()
 cpu_time_1 = grid_solver.add_material_parameters(mat_para_dictionary)
 cpu_time_2 = grid_solver.set_unit_cell_R_grid(inward_thk_dr=uc_inward_thk_dr, outward_thk_dr=uc_outward_thk_dr)
@@ -1617,56 +1617,6 @@ cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coo
 cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
 cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, doping=['n', 1e20])
 cpu_time_9 = grid_solver.make_poisson_matrix()
-
-mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                           # channel ext. bias
-for each_wl in range(wl_ea):
-    each_wl_mat_no = 100 + each_wl
-    mim_ext_bias.update({each_wl_mat_no:10.0})                                           # WL ext. bias
-cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
-ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
-cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIM')
-
-cpu_time_12 = grid_solver.solve_poisson_equation(model_type='MIM')
-induced_Q, induced_Q_profile, mat_no_profile, Z_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
-WKB_profile, WKB_profile2, WKB_length_profile, WKB_length_profile2, mat_no_profile, Z_profile = grid_solver.cal_tunneling_probability(mat_no_tox=30, meff=0.5)
-
-print(mim_ext_bias, induced_Q)
-print(cpu_time_9, cpu_time_10, cpu_time_11, cpu_time_12)
-print(grid_solver.RZ_MIS_index_min_max)
-
-plt.imshow(grid_solver.V2_mim, origin='lower')
-plt.imshow(grid_solver.E_mim, origin='lower')
-plt.show()
-
-fig, ax = plt.subplots(5,1)
-ax[0].plot(Z_profile, induced_Q_profile)
-ax[0].grid(ls=':')
-ax[1].plot(Z_profile, WKB_length_profile)
-ax[1].plot(Z_profile, WKB_length_profile2)
-ax[1].grid(ls=':')
-ax[2].plot(Z_profile, WKB_profile)
-ax[2].plot(Z_profile, WKB_profile2)
-ax[2].grid(ls=':')
-ax[3].plot(Z_profile, np.array(induced_Q_profile)*np.array(WKB_profile))
-ax[3].plot(Z_profile, np.array(induced_Q_profile)*np.array(WKB_profile2))
-ax[3].grid(ls=':')
-ax[4].plot(Z_profile, mat_no_profile)
-ax[4].grid(ls=':')
-plt.show()
-
-grid_solver.plot_conduction_band_diagram(output_filename='19V.pdf', model_type='MIM')
-
-cpu_time_10 = grid_solver.make_continuity_matrix()
-
-# poisson equation solver
-ext_bias = {10001:0.0, 10002:0.0}                                                       # BL, SL ext. bias
-for each_wl in range(wl_ea):
-    each_wl_mat_no = 100 + each_wl
-    ext_bias.update({each_wl_mat_no:0.0})                                               # WL ext. bias
-cpu_time_11 = grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8)
-ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
-cpu_time_12 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
-cpu_time_13 = grid_solver.solve_poisson_equation()
 
 # FDM size
 print('FDM size')
@@ -1685,143 +1635,176 @@ print('  @add_ohmic_contact() = %.1e sec' % cpu_time_6)
 print('  @add_ohmic_contact() = %.1e sec' % cpu_time_7)
 print('  @set_semiconductor_parameters() = %.1e sec' % cpu_time_8)
 print('  @make_poisson_matrix() = %.1e sec' % cpu_time_9)
-print('  @make_continuity_matrix() = %.1e sec' % cpu_time_10)
-print('  @make_external_bias_vector() = %.1e sec' % cpu_time_11)
-print('  @make_fixed_charge_vector() = %.1e sec' % cpu_time_12)
-print('  @solve_poisson_equation() = %.1e sec' % cpu_time_13)
-print('')
 
-# Poisson equation solver check
-print('Poisson equation solver check list')
-print('  @V   = [%.3f %.3f]' % (np.min(grid_solver.V1), np.max(grid_solver.V1)))
-print('  @E   = [%.3e %.3e]' % (np.min(grid_solver.E), np.max(grid_solver.E)))
-print('  @Er  = [%.3e %.3e]' % (np.min(grid_solver.Er), np.max(grid_solver.Er)))
-print('  @Ez  = [%.3e %.3e]' % (np.min(grid_solver.Ez), np.max(grid_solver.Ez)))
-print('  @Vbi = [%.3f %.3f]' % (np.min(grid_solver.Vbi), np.max(grid_solver.Vbi)))
-print('')
 
-# 2D visualization
+# MIM MODEL (Tunneling)
 if False:
-    fig, ax = plt.subplots(2,2)
-    ax[0,0].imshow(grid_solver.V2, origin='lower')
-    ax[0,1].imshow(grid_solver.E, origin='lower')
-    ax[1,0].imshow(grid_solver.Er, origin='lower')
-    ax[1,1].imshow(grid_solver.Ez, origin='lower')
+    # external bias
+    wl_bias = 1.0
+    mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                           # channel ext. bias
+    for each_wl in range(wl_ea):
+        each_wl_mat_no = 100 + each_wl
+        mim_ext_bias.update({each_wl_mat_no:wl_bias})                                       # WL ext. bias
+    cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
+
+    # fixed charge
+    ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
+    cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIM')
+
+    # poisson equation
+    cpu_time_12 = grid_solver.solve_poisson_equation(model_type='MIM')
+    induced_Q, induced_Q_profile, mat_no_profile, Z_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
+    WKB_profile, WKB_profile2, WKB_length_profile, WKB_length_profile2, mat_no_profile, Z_profile = grid_solver.cal_tunneling_probability(mat_no_tox=30, meff=0.5)
+
+    # debugging
+    print(mim_ext_bias, induced_Q)
+    print(cpu_time_9, cpu_time_10, cpu_time_11, cpu_time_12)
+    print(grid_solver.RZ_MIS_index_min_max)
+
+    # visualization: poission equation
+    plt.imshow(grid_solver.V2_mim, origin='lower')
+    plt.imshow(grid_solver.E_mim, origin='lower')
     plt.show()
 
-# WL bias sweep
-WL_sweep_range = np.linspace(-2.0, 3.0, 51)
+    # visualization: poission equation
+    fig, ax = plt.subplots(5,1)
+    ax[0].plot(Z_profile, induced_Q_profile)
+    ax[0].grid(ls=':')
+    ax[1].plot(Z_profile, WKB_length_profile)
+    ax[1].plot(Z_profile, WKB_length_profile2)
+    ax[1].grid(ls=':')
+    ax[2].plot(Z_profile, WKB_profile)
+    ax[2].plot(Z_profile, WKB_profile2)
+    ax[2].grid(ls=':')
+    ax[3].plot(Z_profile, np.array(induced_Q_profile)*np.array(WKB_profile))
+    ax[3].plot(Z_profile, np.array(induced_Q_profile)*np.array(WKB_profile2))
+    ax[3].grid(ls=':')
+    ax[4].plot(Z_profile, mat_no_profile)
+    ax[4].grid(ls=':')
+    plt.show()
 
-for WL_bias in WL_sweep_range:
+    grid_solver.plot_conduction_band_diagram(output_filename='19V.pdf', model_type='MIM')
+
+
+# MIS MODEL (CV)
+if True:
+    # preparing grid (USER INPUT)
+    cpu_time_10 = grid_solver.make_continuity_matrix()
+
+    # CPU time check
+    print('  @make_continuity_matrix() = %.1e sec' % cpu_time_10)
+
+    # WL bias SWEEP range
+    WL_sweep_range = np.linspace(0.0, 3.0, 31)
+
+    # calculating injected charge per delta WL bias (using MIM model)
+    ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                                   # BL, SL ext. bias
+    for each_wl in range(wl_ea):
+        each_wl_mat_no = 100 + each_wl
+        delta_WL_bias = WL_sweep_range[1] - WL_sweep_range[0]                                   # step bias
+        ext_bias.update({each_wl_mat_no:delta_WL_bias})                                         # WL ext. bias
+    grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIM')
+    ctn_fixed_charge_density = {31:0.0e24}                                                      # fixed charge
+    grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIM')
+    grid_solver.solve_poisson_equation(model_type='MIM')
+    induced_Q, induced_Q_profile, mat_no_profile, Z_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
     
-    # CPU time
-    start = time.time()
-    
-    # poisson equation solver
+    # calculating timeline
     ext_bias = {10001:0.0, 10002:0.0}                                                           # BL, SL ext. bias
     for each_wl in range(wl_ea):
         each_wl_mat_no = 100 + each_wl
-        ext_bias.update({each_wl_mat_no:WL_bias})                                               # WL ext. bias
-    grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8)
+        ext_bias.update({each_wl_mat_no:WL_sweep_range[-1]})                                     # WL ext. bias
+    grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIS')
     ctn_fixed_charge_density = {31:0.0e24}                                                      # fixed charge
-    grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density)
+    grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIS')
+    grid_solver.solve_poisson_equation(model_type='MIS')
+    grid_solver.solve_continuity_equation(dt=1e-20, output_filename=False)
+    In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
+    # calculating timeline
+    t_start = ( induced_Q * 1e-4 ) / np.abs( In_bl )
+    t_half  = ( induced_Q * 0.5  ) / np.abs( In_bl )
+    t_full  = ( induced_Q * 1.0  ) / np.abs( In_bl )
+    t_half_div = 100
+    timeline_1st_half = np.logspace( np.log10(t_start), np.log10(t_half), t_half_div)
+    timeline_2nd_half = t_full - np.array( list(timeline_1st_half)[::-1][1:] )
+    timeline_full = np.array( list(timeline_1st_half) + list(timeline_2nd_half) )
 
-    # injected charge, injected current
-    Qn_bl, Qp_bl, Qn_sl, Qp_sl = 0.0, 0.0, 0.0, 0.0
-    In_bl, Ip_bl, In_sl, Ip_sl = 0.0, 0.0, 0.0, 0.0
-    Qn_bl_array, In_bl_array = [], []
-    Qn_sl_array, In_sl_array = [], []
-    
-    # SG scheme (poission equation + continuity equations)
-    dQ = grid_solver.q * 1e-2   # 2e-3
-    dt = 1e-17
-    each_time = 0.0
-    each_time_index = -1
-    output_index = 50
-    timeline = []
+    # WL bias SWEEP
+    for WL_bias in WL_sweep_range:
+        
+        # CPU time
+        start = time.time()
+        
+        # setting external bias, fixed charge
+        ext_bias = {10001:0.0, 10002:0.0}                                                           # BL, SL ext. bias
+        for each_wl in range(wl_ea):
+            each_wl_mat_no = 100 + each_wl
+            ext_bias.update({each_wl_mat_no:WL_bias})                                               # WL ext. bias
+        grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIS')
+        ctn_fixed_charge_density = {31:0.0e24}                                                      # fixed charge
+        grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIS')
 
-    # time evolution
-    while True:
-        # info
-        each_time += dt
-        each_time_index += 1
-        timeline.append(each_time)
+        # time evolution
+        dt = 1e-20
+        output_index = 10
+        Qn_bl,  Qp_bl,  Qn_sl,  Qp_sl  = 0.0, 0.0, 0.0, 0.0
+        dQn_bl, dQp_bl, dQn_sl, dQp_sl = 0.0, 0.0, 0.0, 0.0
+        
+        for each_time_index, each_time in enumerate( timeline_full ):
+            # calculating dt
+            if each_time_index == 0:
+                dt = each_time
+            else:
+                dt = timeline_full[each_time_index] - timeline_full[each_time_index-1]
 
-        # output filename
-        if each_time_index % output_index == 0:
-            output_filename = 'SG_scheme_CV_Vg_%.2f_%05i_elapsed_time_%.2e_dt_%.2e.png' % (WL_bias, each_time_index, each_time, dt)
-        else:
-            output_filename = False
+            # output filename
+            if each_time_index % output_index == 0:
+                output_filename = 'SG_scheme_CV_Vg_%.2f_%05i_elapsed_time_%.2e_dt_%.2e.png' % (WL_bias, each_time_index, each_time, dt)
+            else:
+                output_filename = False
+                
+            # poission equation solver
+            grid_solver.solve_poisson_equation(model_type='MIS')
+            # continuity equation solver
+            grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
             
-        # poission equation solver
-        grid_solver.solve_poisson_equation()
-        # continuity equation solver
-        grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
-        
-        # calculate BL current
-        In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
+            # calculate BL current
+            In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
 
-        # update dt
-        In_bl_abs, In_sl_abs = np.abs(In_bl), np.abs(In_sl)
-        dt_ref = np.minimum( np.abs( dQ / In_bl ) , np.abs( dQ / In_sl ) )
-        
-        if (In_bl_abs > 5e-8) and (In_bl_abs > 5e-8):
-            dt = dt_ref * 5.0
-        elif (In_bl_abs > 4e-8) and (In_bl_abs > 4e-8):
-            dt = dt_ref * 4.0
-        elif (In_bl_abs > 3e-8) and (In_bl_abs > 3e-8):
-            dt = dt_ref * 3.0
-        elif (In_bl_abs > 2e-8) and (In_bl_abs > 2e-8):
-            dt = dt_ref * 2.0
-        elif (In_bl_abs > 1e-8) and (In_bl_abs > 1e-8):
-            dt = dt_ref * 1.0
-        elif (In_bl_abs > 5e-9) and (In_bl_abs > 5e-9):
-            dt = dt_ref * 0.5
-        elif (In_bl_abs > 1e-9) and (In_bl_abs > 1e-9):
-            dt = dt_ref * 0.1
-        elif (In_bl_abs > 5e-10) and (In_bl_abs > 5e-10):
-            dt = dt_ref * 0.05
-        else:
-            dt = dt_ref * 0.01
-
-        # change in charge
-        dQn_bl, dQp_bl = In_bl * dt, Ip_bl * dt
-        dQn_sl, dQp_sl = In_sl * dt, Ip_sl * dt
-        
-        # accumulated charge
-        Qn_bl += dQn_bl
-        Qp_bl += dQp_bl
-        Qn_sl += dQn_sl
-        Qp_sl += dQp_sl
-
-        # 
-        Qn_bl_array.append(Qn_bl)
-        Qn_sl_array.append(Qn_sl)
-        In_bl_array.append(In_bl)
-        In_sl_array.append(In_sl)
-        
-        # progress check
-        if each_time_index % output_index == 0:
+            # change in charge
+            dQn_bl, dQp_bl = In_bl * dt, Ip_bl * dt
+            dQn_sl, dQp_sl = In_sl * dt, Ip_sl * dt
+            
+            # accumulated charge
+            Qn_bl += dQn_bl
+            Qp_bl += dQp_bl
+            Qn_sl += dQn_sl
+            Qp_sl += dQp_sl
+            
             # progress check
-            output_string = '%i,%.2f,%.2e,%.2e, %.2e,%.2e, %.2e,%.2e' % \
-                            (each_time_index, WL_bias, each_time, dt, In_bl, In_sl, Qn_bl, Qn_sl)
-            print(output_string)
+            if each_time_index % output_index == 0:
+                # progress check
+                output_string = '%i,%.2f,%.2e,%.2e, %.2e,%.2e, %.2e,%.2e' % \
+                                (each_time_index, WL_bias, each_time, dt, In_bl, In_sl, Qn_bl, Qn_sl)
+                print(output_string)
 
-        # check saturation
-        if ( np.abs( In_bl ) < 5e-11 ) and ( np.abs( In_sl ) < 5e-11 ):
-            break      
+            # check saturation
+            if ( np.abs( In_bl ) < 1e-11 ) and ( np.abs( In_sl ) < 1e-11 ):
+                break      
+            
+        # CPU time
+        end = time.time()
+        output_string = '%i,%.2f,%.2e,%.2e, %.2e,%.2e, %.2e,%.2e\n   CPU time %.3f sec (%s)\n' % \
+                        (each_time_index, WL_bias, each_time, dt, In_bl, In_sl, Qn_bl, Qn_sl, end-start, time.ctime() )
+        print(output_string)
         
-    # CPU time
-    end = time.time()
-    output_string = '%i,%.2f,%.2e,%.2e, %.2e,%.2e, %.2e,%.2e\n   CPU time %.3f sec (%s)\n' % \
-                    (each_time_index, WL_bias, each_time, dt, In_bl, In_sl, Qn_bl, Qn_sl, end-start, time.ctime() )
-    print(output_string)
-    
-    # Poisson equation solver & Continuity equation solver check
-    #print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]' % \
-    #      (np.min(grid_solver.V1), np.max(grid_solver.V1), \
-    #       np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
-    #       np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+        # Poisson equation solver & Continuity equation solver check
+        #print('   V = [%.2e %.2e], Er = [%.2e %.2e], Ez = [%.2e %.2e]\n   N1 = [%.2e %.2e], P1 = [%.2e %.2e]' % \
+        #      (np.min(grid_solver.V1), np.max(grid_solver.V1), \
+        #       np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
+        #       np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+        
+
     
 
     
