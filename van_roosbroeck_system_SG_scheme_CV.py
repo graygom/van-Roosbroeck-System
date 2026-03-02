@@ -1698,44 +1698,24 @@ if True:
     WL_sweep_range = np.linspace(0.0, 3.0, 31)
 
     # calculating injected charge per delta WL bias (using MIM model)
-    ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                                   # BL, SL ext. bias
+    ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                                           # BL, SL ext. bias
     for each_wl in range(wl_ea):
         each_wl_mat_no = 100 + each_wl
-        delta_WL_bias = WL_sweep_range[1] - WL_sweep_range[0]                                   # step bias
-        ext_bias.update({each_wl_mat_no:delta_WL_bias})                                         # WL ext. bias
+        delta_wl_bias = np.max( WL_sweep_range[1:] - WL_sweep_range[:-1] )
+        ext_bias.update({each_wl_mat_no:delta_wl_bias})                                                 # WL ext. bias
     grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIM')
-    ctn_fixed_charge_density = {31:0.0e24}                                                      # fixed charge
+    ctn_fixed_charge_density = {31:0.0e24}                                                              # fixed charge
     grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIM')
     grid_solver.solve_poisson_equation(model_type='MIM')
     induced_Q, induced_Q_profile, mat_no_profile, Z_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
     
-    # calculating timeline
-    ext_bias = {10001:0.0, 10002:0.0}                                                           # BL, SL ext. bias
-    for each_wl in range(wl_ea):
-        each_wl_mat_no = 100 + each_wl
-        ext_bias.update({each_wl_mat_no:WL_sweep_range[-1]})                                     # WL ext. bias
-    grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIS')
-    ctn_fixed_charge_density = {31:0.0e24}                                                      # fixed charge
-    grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIS')
-    grid_solver.solve_poisson_equation(model_type='MIS')
-    grid_solver.solve_continuity_equation(dt=1e-20, output_filename=False)
-    In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
-    # calculating timeline
-    t_start = ( induced_Q * 1e-4 ) / np.abs( In_bl )
-    t_half  = ( induced_Q * 0.5  ) / np.abs( In_bl )
-    t_full  = ( induced_Q * 1.0  ) / np.abs( In_bl )
-    t_half_div = 100
-    timeline_1st_half = np.logspace( np.log10(t_start), np.log10(t_half), t_half_div)
-    timeline_2nd_half = t_full - np.array( list(timeline_1st_half)[::-1][1:] )
-    timeline_full = np.array( list(timeline_1st_half) + list(timeline_2nd_half) )
-
     # WL bias SWEEP
     for WL_bias in WL_sweep_range:
         
         # CPU time
         start = time.time()
-        
-        # setting external bias, fixed charge
+
+        # STEP0: calculating current at ohmic contact (using MIS model)
         ext_bias = {10001:0.0, 10002:0.0}                                                           # BL, SL ext. bias
         for each_wl in range(wl_ea):
             each_wl_mat_no = 100 + each_wl
@@ -1743,12 +1723,55 @@ if True:
         grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIS')
         ctn_fixed_charge_density = {31:0.0e24}                                                      # fixed charge
         grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIS')
-
+        grid_solver.solve_poisson_equation(model_type='MIS')
+        grid_solver.solve_continuity_equation(dt=1e-20, output_filename=False)
+        In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
+        
+        # STEP1: calculating timeline
+        # ~~ 1st trial ~~
+        #t_start = [ ( induced_Q * 1e-3 ) / np.abs( In_bl ), 100 ]
+        #t_cut1  = [ ( induced_Q * 0.1  ) / np.abs( In_bl ), 200]
+        #t_cut2  = [ ( induced_Q * 0.2  ) / np.abs( In_bl ), 200]
+        #t_cut3  = [ ( induced_Q * 0.3  ) / np.abs( In_bl ), 200]
+        #t_end   = [ ( induced_Q * 0.5  ) / np.abs( In_bl ), 200]
+        #timeline_start = np.logspace( -15.0,                np.log10(t_start[0]), t_start[1]  )
+        #timeline_cut1  = np.logspace( np.log10(t_start[0]), np.log10(t_cut1[0]),  t_cut1[1]+1 )[1:]
+        #timeline_cut1  = np.linspace( t_start[0], t_cut1[0],  t_cut1[1]+1 )[1:]
+        #timeline_cut2  = np.logspace( np.log10(t_cut1[0]),  np.log10(t_cut2[0]),  t_cut2[1]+1 )[1:]
+        #timeline_cut2  = np.linspace( t_cut1[0],  t_cut2[0],  t_cut2[1]+1 )[1:]
+        #timeline_cut3  = np.logspace( np.log10(t_cut2[0]),  np.log10(t_cut3[0]),  t_cut3[1]+1 )[1:]
+        #timeline_cut3  = np.linspace( t_cut2[0],  t_cut3[0],  t_cut3[1]+1 )[1:]
+        #timeline_end   = np.logspace( np.log10(t_cut3[0]),  np.log10(t_end[0]),   t_end[1]+1 )[1:]
+        #timeline_end   = np.linspace( t_cut3[0],  t_end[0],   t_end[1]+1 )[1:]
+        #timeline_full  = list(timeline_start) + list(timeline_cut1) + list(timeline_cut2) + list(timeline_cut3) + list(timeline_end)
+        #timeline_len   = len(timeline_full)
+        # ~~ 2nd trial ~~
+        #t_start = [ ( induced_Q * 1e-4 ) / np.abs( In_bl ), 100]
+        #t_end   = [ ( induced_Q * 1.0  ) / np.abs( In_bl ), 1000]
+        #timeline_start = np.logspace( -15.0, np.log10(t_start[0]), t_start[1]  )
+        #timeline_end   = (t_end[0] - np.logspace( np.log10(t_end[0]*1e-7), np.log10(t_end[0]), t_end[1]+1 ))[::-1][10:]
+        #timeline_end_  = np.where( timeline_end > t_start[0] )
+        #timeline_end   = timeline_end[timeline_end_]
+        #timeline_full  = np.array(list(timeline_start) + list(timeline_end))
+        #timeline_len   = len(timeline_full)
+        # ~~ 3rd trial ~~
+        t_end  = induced_Q / np.abs( In_bl )
+        dt_max = 3e-13
+        N_timeline = 2.0 * t_end / dt_max
+        dt_slope = dt_max / (N_timeline / 2.0)
+        dt_array_half = np.arange( dt_slope, dt_max, dt_slope)
+        dt_array_full = np.array( list(dt_array_half) + list(dt_array_half[::-1]) )
+        timeline_full = np.add.accumulate(dt_array_full)
+        timeline_len   = len(timeline_full) 
+        print('induced Q = %.2e, t_length = %i, dt_max= %.2e, dt_min= %.2e, t_min = %.2e, t_max = %.2e\n' % \
+              (induced_Q, timeline_len, np.max(dt_array_full), np.min(dt_array_full), timeline_full[0], timeline_full[-1]))
+        
         # time evolution
-        dt = 1e-20
-        output_index = 10
+        dt = 0.0
+        output_index = 50
         Qn_bl,  Qp_bl,  Qn_sl,  Qp_sl  = 0.0, 0.0, 0.0, 0.0
         dQn_bl, dQp_bl, dQn_sl, dQp_sl = 0.0, 0.0, 0.0, 0.0
+        dQ_max = induced_Q * 0.01
         
         for each_time_index, each_time in enumerate( timeline_full ):
             # calculating dt
@@ -1774,6 +1797,14 @@ if True:
             # change in charge
             dQn_bl, dQp_bl = In_bl * dt, Ip_bl * dt
             dQn_sl, dQp_sl = In_sl * dt, Ip_sl * dt
+
+            # STEP2: changing timeline
+            if (each_time_index != 0) and (each_time_index < (timeline_len-1)):
+                if np.abs(dQn_bl) > dQ_max:
+                    # 
+                    new_dt = ( dQ_max / np.abs(In_bl) ) * np.ones( (timeline_len-each_time_index-1) )
+                    print(each_time_index, timeline_len, len(new_dt), len(np.add.accumulate( new_dt )))
+                    timeline_full[(each_time_index+1):] = timeline_full[each_time_index] + np.add.accumulate( new_dt )
             
             # accumulated charge
             Qn_bl += dQn_bl
@@ -1789,7 +1820,7 @@ if True:
                 print(output_string)
 
             # check saturation
-            if ( np.abs( In_bl ) < 1e-11 ) and ( np.abs( In_sl ) < 1e-11 ):
+            if ( np.abs( In_bl ) < 1e-9 ):
                 break      
             
         # CPU time
