@@ -1389,7 +1389,7 @@ class SOLVER(GRID):
 
             # STEP0: [induced charge density * freq * dt], [tunneling probability]
             induced_Q_density = E_Q_profile[each_z-1] * (thermal_vel/70e-10) * dt
-            tunneling_prob = WKB_length_profile2[each_z-1]
+            tunneling_prob = WKB_profile2[each_z-1]
                 
             # STEP1: sweep R
             for each_r in range(1, self.R_elmts_len-1):
@@ -1439,7 +1439,7 @@ class SOLVER(GRID):
                 self.FC_mim[index_r_z] += ctn_trap_flux[each_r_ctn_index2]
 
             # visualization
-            if True:
+            if False:
                 if each_z == int(self.R_elmts_len/2.0):
                     fig, ax = plt.subplots(1, 2, figsize=(12, 6))
                     ax[0].plot(r_ctn, f_ctn_ccs(r_ctn), 'o-')
@@ -1447,9 +1447,28 @@ class SOLVER(GRID):
                     ax[1].plot(r_ctn, f_ctn_density(r_ctn), 'o-')
                     ax[1].grid(ls=':')
                     plt.show()
+            if True:
+                if (each_z == 114):
+                    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+                    ax[0].plot(r_ctn, f_ctn_ccs(r_ctn), 'o-')
+                    ax[0].grid(ls=':')
+                    ax[1].plot(r_ctn, f_ctn_density(r_ctn), 'o-')
+                    ax[1].plot(r_ctn, ctn_trap_flux, 'o-')
+                    ax[1].grid(ls=':')
+                    print(each_z, induced_Q_density, tunneling_prob)
+                elif (each_z == int(self.Z_elmts_len/2.0)):
+                    ax[0].plot(r_ctn, f_ctn_ccs(r_ctn), 'o-')
+                    ax[0].grid(ls=':')
+                    ax[1].plot(r_ctn, f_ctn_density(r_ctn), 'o-')
+                    ax[1].plot(r_ctn, ctn_trap_flux, 'o-')
+                    ax[1].grid(ls=':')
+                    print(each_z, induced_Q_density, tunneling_prob)
+                    plt.show()
 
-            # debugging
-            #print(each_z, r_ch_tox, r_tox_ctn, induced_Q_density, tunneling_prob, ctn_trap_flux)
+                    
+
+                    # debugging
+                    print(each_z, r_ch_tox, r_tox_ctn, induced_Q_density, tunneling_prob, ctn_trap_flux)
                         
 
     # ===== plot conduction band diagram  =====
@@ -1764,7 +1783,7 @@ if True:
     WKB_profile, WKB_profile2, WKB_length_profile, WKB_length_profile2, mat_no_profile, Z_profile = grid_solver.cal_tunneling_probability(mat_no_tox=30, meff=0.5)
 
     # CTM model 1D
-    grid_solver.cal_ctn_trap_model_1d(dt=7e-6, tox_meff=0.5, mat_no_ch=20, mat_no_tox=30, mat_no_ctn=31, ctn_peak_pos=0.5, \
+    grid_solver.cal_ctn_trap_model_1d(dt=5e-3, tox_meff=0.5, mat_no_ch=20, mat_no_tox=30, mat_no_ctn=31, ctn_peak_pos=0.5, \
                                       cnt_ccs_array=[1e-19, 1e-18, 1e-19], ctn_density_array=[1e25, 5e25, 1e25])
 
     # external bias
@@ -1971,3 +1990,4 @@ if False:
             #      (np.min(grid_solver.V1), np.max(grid_solver.V1), \
             #       np.min(grid_solver.Er), np.max(grid_solver.Er), np.min(grid_solver.Ez), np.max(grid_solver.Ez), \
             #       np.min(grid_solver.n1), np.max(grid_solver.n1), np.min(grid_solver.p1), np.max(grid_solver.p1)))
+  
