@@ -1051,10 +1051,14 @@ class GRID:
         # external bias vector initialization
         self.EB = np.zeros(self.RZ_nodes_len)
         self.EB_mim = np.zeros(self.RZ_nodes_len)
+        self.EB2 = self.EB.reshape(self.Z_nodes_len, self.R_nodes_len).T
+        self.EB_mim2 = self.EB_mim.reshape(self.Z_nodes_len, self.R_nodes_len).T
 
         # fixed charge density vector initialization
         self.FC = np.zeros(self.RZ_nodes_len)
         self.FC_mim = np.zeros(self.RZ_nodes_len)
+        self.FC2 = self.FC.reshape(self.Z_nodes_len, self.R_nodes_len).T
+        self.FC_mim2 = self.FC_mim.reshape(self.Z_nodes_len, self.R_nodes_len).T
 
         # CPU time
         end = time.time()
@@ -1122,6 +1126,9 @@ class SOLVER(GRID):
                             self.EB[index_r_z]  = -self.Vbi[index_r_z]
                             self.EB[index_r_z] += external_bias_conditions[each_mat_no]
 
+            # visualization
+            self.EB2 = self.EB.reshape(self.Z_nodes_len, self.R_nodes_len).T
+
         # MIM model: 'S' -> 'M'
         if model_type == 'MIM':
             
@@ -1139,6 +1146,9 @@ class SOLVER(GRID):
                         # external bias @channel
                         if each_mat_mis == 'S':
                             self.EB_mim[index_r_z] = external_bias_conditions[each_mat_no]
+
+            # visualization
+            self.EB_mim2 = self.EB_mim.reshape(self.Z_nodes_len, self.R_nodes_len).T
 
         # CPU time
         end = time.time()
@@ -1166,6 +1176,9 @@ class SOLVER(GRID):
                             # fixed charge density 
                             self.FC[index_r_z] = fixed_charge_density[each_mat_no]
 
+            # visualization
+            self.FC2 = self.FC.reshape(self.Z_nodes_len, self.R_nodes_len).T
+
         # MIM model
         if model_type == 'MIM':
             
@@ -1180,6 +1193,9 @@ class SOLVER(GRID):
                             index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
                             # fixed charge density 
                             self.FC_mim[index_r_z] = fixed_charge_density[each_mat_no]
+
+            # visualization
+            self.FC_mim2 = self.FC_mim.reshape(self.Z_nodes_len, self.R_nodes_len).T
 
         # CPU time
         end = time.time()
@@ -1388,7 +1404,8 @@ class SOLVER(GRID):
             k_ctn = []
 
             # STEP0: [induced charge density * freq * dt], [tunneling probability]
-            induced_Q_density = E_Q_profile[each_z-1] * (thermal_vel/70e-10) * dt
+            # E_Q_profile = (D_tox/self.q)**1.5
+            induced_Q_density = E_Q_profile[each_z-1] * ( thermal_vel**2 / 70e-10 ) * dt
             tunneling_prob = WKB_profile2[each_z-1]
                 
             # STEP1: sweep R
@@ -1417,26 +1434,26 @@ class SOLVER(GRID):
             induced_Q_density *= r_ch_tox / r_tox_ctn
 
             # STEP3: CTN material parameter interpolation
-            x = [r_ctn[0], r_ctn[0] + ctn_peak_pos * (r_ctn[-1] - r_ctn[0]), r_ctn[-1]]
+            x = [r_ctn[0], r_ctn[int(len(r_ctn_index)*ctn_peak_pos)], r_ctn[-1]]
             f_ctn_ccs = sc.interpolate.interp1d( x, cnt_ccs_array, kind='linear' )
             f_ctn_density = sc.interpolate.interp1d( x, ctn_density_array, kind='linear' )
 
             # STEP4: CTN ccs * CTN density (empty state)
-            ctn_ccs_density = f_ctn_ccs(r_ctn) * f_ctn_density(r_ctn)
+            f_ctn_density_new = np.where( np.abs( self.FC_mim2[r_ctn_index, each_z] ) > f_ctn_density(r_ctn), \
+                                          f_ctn_density(r_ctn), np.abs( self.FC_mim2[r_ctn_index, each_z] ) )
+            ctn_ccs_density = f_ctn_ccs(r_ctn) * ( f_ctn_density(r_ctn) - f_ctn_density_new  )
             ctn_r_array_dr = r_ctn[1] - r_ctn[0]
             ctn_ccs_density_cum = np.cumsum( ctn_ccs_density ) * ctn_r_array_dr
 
             # STEP5: finding CTN trapped flux
-            ctn_pass_flux  = r_tox_ctn * induced_Q_density * tunneling_prob * np.exp( -ctn_ccs_density_cum ) / np.array(r_ctn)
-            ctn_trap_flux  = list( ctn_pass_flux[:-1] - ctn_pass_flux[1:] )
-            ctn_trap_flux += [ctn_trap_flux[-1]]
+            ctn_pass_flux  = r_tox_ctn * induced_Q_density * tunneling_prob * ( 1 - np.exp( -ctn_ccs_density_cum ) ) / np.array(r_ctn)
+            ctn_trap_flux  = list( ctn_pass_flux[1:] - ctn_pass_flux[:-1] )
+            ctn_trap_flux  = np.array( [ctn_trap_flux[0]/2] + ctn_trap_flux )
 
             # STEP6: updating Fixed charge density
-            for each_r_ctn_index2, each_r_ctn_index in enumerate(r_ctn_index):
-                # 1D serialization index
-                index_r_z = self.R_nodes_len * (each_z+0) + (each_r_ctn_index+0)
-                # 
-                self.FC_mim[index_r_z] += ctn_trap_flux[each_r_ctn_index2]
+            self.FC_mim2[r_ctn_index, each_z] += -ctn_trap_flux
+            self.FC_mim2[r_ctn_index, each_z]  = np.where( np.abs( self.FC_mim2[r_ctn_index, each_z] ) > f_ctn_density(r_ctn), \
+                                                           -f_ctn_density(r_ctn), self.FC_mim2[r_ctn_index, each_z] )
 
             # visualization
             if False:
@@ -1448,24 +1465,22 @@ class SOLVER(GRID):
                     ax[1].grid(ls=':')
                     plt.show()
             if True:
-                if (each_z == 114):
+                if (each_z == 1):
                     fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-                    ax[0].plot(r_ctn, f_ctn_ccs(r_ctn), 'o-')
+                    ax[0].plot(r_ctn, ctn_trap_flux, 'o-')
                     ax[0].grid(ls=':')
                     ax[1].plot(r_ctn, f_ctn_density(r_ctn), 'o-')
-                    ax[1].plot(r_ctn, ctn_trap_flux, 'o-')
+                    ax[1].plot(r_ctn, np.abs(self.FC_mim2[r_ctn_index, each_z]), 'o-')
                     ax[1].grid(ls=':')
-                    print(each_z, induced_Q_density, tunneling_prob)
+                    #print(each_z, induced_Q_density, tunneling_prob)
                 elif (each_z == int(self.Z_elmts_len/2.0)):
-                    ax[0].plot(r_ctn, f_ctn_ccs(r_ctn), 'o-')
+                    ax[0].plot(r_ctn, ctn_trap_flux, 'o-')
                     ax[0].grid(ls=':')
                     ax[1].plot(r_ctn, f_ctn_density(r_ctn), 'o-')
-                    ax[1].plot(r_ctn, ctn_trap_flux, 'o-')
+                    ax[1].plot(r_ctn, np.abs(self.FC_mim2[r_ctn_index, each_z]), 'o-')
                     ax[1].grid(ls=':')
-                    print(each_z, induced_Q_density, tunneling_prob)
+                    #print(each_z, induced_Q_density, tunneling_prob)
                     plt.show()
-
-                    
 
                     # debugging
                     print(each_z, r_ch_tox, r_tox_ctn, induced_Q_density, tunneling_prob, ctn_trap_flux)
@@ -1492,7 +1507,7 @@ class SOLVER(GRID):
             ax[1].set_axis_off()
             ax[1].grid(ls=':')
             #ax.plot_surface(R, Z, CB_offset, linewidth=5, vmin=0.0, cmap=cm.coolwarm)
-            ax[2].contourf(Z.T, R.T, CB_offset.T, linewidth=5, levels=[-wl_bias, 0.0], colors='k' )    # cmap=cm.coolwarm
+            ax[2].contourf(Z.T, R.T, CB_offset.T, levels=[-wl_bias, 0.0], colors='k' )    # cmap=cm.coolwarm
             ax[2].set_axis_off()
             ax[2].grid(ls=':')
             plt.axis('equal')
@@ -1671,7 +1686,7 @@ class SOLVER(GRID):
 #
 
 # number of wls (USER INPUT)
-wl_ea = 3
+wl_ea = 1
 
 # material para (USER INPUT)
 mat_para_dictionary = {}
@@ -1761,45 +1776,70 @@ print('  @make_poisson_matrix() = %.1e sec' % cpu_time_9)
 
 # MIM MODEL (Tunneling)
 if True:
-    # external bias
-    wl_bias = 18.0
-    mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                           # channel ext. bias
-    for each_wl in range(wl_ea):
-        each_wl_mat_no = 100 + each_wl
-        if each_wl == 1:
-            mim_ext_bias.update({each_wl_mat_no:wl_bias})                                   # WL ext. bias
+    #
+    timeline = np.logspace(-7, -1, 20)
+
+    #
+    for each_index, each_time in enumerate(timeline):
+        #
+        if each_index == 0:
+            dt = each_time
         else:
-            mim_ext_bias.update({each_wl_mat_no:0.0})                                   # WL ext. bias
-    cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
+            dt = each_time - timeline[each_index-1]
 
-    # fixed charge
-    ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
-    cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIM')
-
-    # poisson equation
-    cpu_time_12 = grid_solver.solve_poisson_equation(model_type='MIM')
-    induced_Q, induced_Q_profile, mat_no_profile, Z_profile, E_profile, E_Q_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
-    thermal_vel = grid_solver.cal_thermal_velocity()
-    WKB_profile, WKB_profile2, WKB_length_profile, WKB_length_profile2, mat_no_profile, Z_profile = grid_solver.cal_tunneling_probability(mat_no_tox=30, meff=0.5)
-
-    # CTM model 1D
-    grid_solver.cal_ctn_trap_model_1d(dt=5e-3, tox_meff=0.5, mat_no_ch=20, mat_no_tox=30, mat_no_ctn=31, ctn_peak_pos=0.5, \
-                                      cnt_ccs_array=[1e-19, 1e-18, 1e-19], ctn_density_array=[1e25, 5e25, 1e25])
-
-    # external bias
-    wl_bias = 0.0
-    mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                           # channel ext. bias
-    for each_wl in range(wl_ea):
-        each_wl_mat_no = 100 + each_wl
-        mim_ext_bias.update({each_wl_mat_no:wl_bias})                                       # WL ext. bias
-    cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
-
-    # poisson equation
-    cpu_time_13 = grid_solver.solve_poisson_equation(model_type='MIM')
+        #
+        print(each_index, each_time, dt)
     
+        # external bias
+        wl_bias = 14.0
+        mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                           # channel ext. bias
+        for each_wl in range(wl_ea):
+            each_wl_mat_no = 100 + each_wl
+            if each_wl == int(wl_ea/2):
+                mim_ext_bias.update({each_wl_mat_no:wl_bias})                                   # WL ext. bias
+            else:
+                mim_ext_bias.update({each_wl_mat_no:0.0})                                   # WL ext. bias
+        cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
+
+        # fixed charge
+        #ctn_fixed_charge_density = {31:0.0e24}                                                  # fixed charge
+        #cpu_time_11 = grid_solver.make_fixed_charge_vector(fixed_charge_density=ctn_fixed_charge_density, model_type='MIM')
+
+        # poisson equation
+        cpu_time_12 = grid_solver.solve_poisson_equation(model_type='MIM')
+        induced_Q, induced_Q_profile, mat_no_profile, Z_profile, E_profile, E_Q_profile = grid_solver.cal_channel_induced_charge(mat_no_ch=20, mat_no_tox=30)
+        thermal_vel = grid_solver.cal_thermal_velocity()
+        WKB_profile, WKB_profile2, WKB_length_profile, WKB_length_profile2, mat_no_profile, Z_profile = grid_solver.cal_tunneling_probability(mat_no_tox=30, meff=0.5)
+
+        # CTM model 1D
+        grid_solver.cal_ctn_trap_model_1d(dt=dt, tox_meff=0.5, mat_no_ch=20, mat_no_tox=30, mat_no_ctn=31, ctn_peak_pos=0.5, \
+                                          cnt_ccs_array=[1e-19, 1e-18, 1e-19], ctn_density_array=[1e25, 5e25, 1e25])
+
+        # external bias
+        wl_bias = 0.0
+        mim_ext_bias = {10001:0.0, 10002:0.0, 20:0.0}                                           # channel ext. bias
+        for each_wl in range(wl_ea):
+            each_wl_mat_no = 100 + each_wl
+            mim_ext_bias.update({each_wl_mat_no:wl_bias})                                       # WL ext. bias
+        cpu_time_10 = grid_solver.make_external_bias_vector(external_bias_conditions=mim_ext_bias, workfunction=4.8, model_type='MIM')
+
+        # poisson equation
+        cpu_time_13 = grid_solver.solve_poisson_equation(model_type='MIM')
+
+        # visualization: poission equation
+        fig, ax = plt.subplots(1, 3, figsize=(17,5))
+        ax[0].imshow(grid_solver.V2_mim, origin='lower')
+        ax[1].imshow(grid_solver.E_mim, origin='lower')
+        ax[2].imshow(grid_solver.FC_mim2, origin='lower')
+        plt.show()
+
+
+
+
+
     # debugging
     print(mim_ext_bias, induced_Q)
-    print(cpu_time_9, cpu_time_10, cpu_time_11, cpu_time_12)
+    print(cpu_time_9, cpu_time_10, cpu_time_12)
     print(grid_solver.RZ_MIS_index_min_max)
 
     # visualization: poission equation
