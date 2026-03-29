@@ -2063,7 +2063,7 @@ cpu_time_5 = grid_solver.set_unit_cell_RZ_mis_region()
 cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
 cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
 cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, \
-                                                      doping=['n', 1e20], ct_doping=['n', [1e22, 3e21, 6e20]])
+                                                      doping=['n', 1e20], ct_doping=['n', [1e22, 3e21, 5e20]])
 cpu_time_9 = grid_solver.make_poisson_matrix()
 
 # FDM size
@@ -2203,7 +2203,7 @@ if True:
     # WL bias sweep info
     wl_bias_sweep_info = {}
     wl_bias_sweep_info[0] = {}
-    wl_bias_sweep_info[0]['div'] = 36
+    wl_bias_sweep_info[0]['div'] = 71
     wl_bias_sweep_info[0]['sel_wl']   = [+0.0, -3.0]
     wl_bias_sweep_info[0]['unsel_wl'] = [+0.0, +7.0]
     wl_bias_sweep_info[0]['bl']       = [+0.0, +0.5]
@@ -2233,7 +2233,7 @@ if True:
 
         # Gummel iteration parameter
         gi_w = 0.99
-        gi_error_v = 2e-4
+        gi_error_v = 6e-4
         gi_error_n = 1e22
 
         # timeline
@@ -2356,6 +2356,7 @@ if True:
             # file output 2
             grid_solver.save_solutions(output_filename = output_filename + '_sol.txt')
 
+                
 
 
 
