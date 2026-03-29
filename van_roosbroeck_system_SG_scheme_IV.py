@@ -3,10 +3,11 @@
 # AUTHOR: Hyunseung Yoo
 # PURPOSE: 
 # REVISION: 
-# REFERENCE: a numerical study of the van Roosbroeck system for semiconductor (SJSU, 2018) 
+# REFERENCE: a numerical study of the van Roosbroeck system for semiconductor (SJSU, 2018)
+#            multi-physics modeling and simulation of photovoltaic devices and systems (MSU, 2020)
 #
 
-import sys, time, copy, psutil, platform, cpuinfo
+import sys, time, copy, psutil    # platform, cpuinfo
 import numpy as np
 import scipy as sc
 import sympy as sp
@@ -1660,7 +1661,7 @@ class SOLVER(GRID):
             Z, R = np.meshgrid(z, r)
             #
             fig, ax = plt.subplots(2, 2, figsize=(10,8))
-            ax00 = ax[0,0].imshow(self.V2, origin='lower')
+            ax00 = ax[0,0].imshow(self.V2, origin='lower')     # 'RdBu'
             ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.8)
             ax[0,0].set_title('electric potential')
             plt.colorbar(ax00)
@@ -1680,7 +1681,33 @@ class SOLVER(GRID):
             ax[1,1].set_title('hole density @channel')
             plt.colorbar(ax11)
             #
-            plt.savefig(output_filename)
+            plt.savefig(output_filename+'_0.pdf')
+            #
+            plt.close()
+            
+            #
+            fig, ax = plt.subplots(2, 2, figsize=(10,8))
+            ax00 = ax[0,0].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
+            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.8)
+            ax[0,0].set_title('electric potential')
+            plt.colorbar(ax00)
+            #
+            ax01 = ax[0,1].imshow(self.E, origin='lower', cmap='coolwarm')
+            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.8)
+            ax[0,1].set_title('electric field')
+            plt.colorbar(ax01)
+            #
+            ax10 = ax[1,0].imshow(np.log10(self.n2+1), origin='lower', cmap='coolwarm')
+            ax[1,0].contour(Z, R, np.log10(self.n2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
+            ax[1,0].set_title('electron density @channel')
+            plt.colorbar(ax10)
+            #
+            ax11 = ax[1,1].imshow(np.log10(self.p2+1), origin='lower', cmap='coolwarm')
+            ax[1,1].contour(Z, R, np.log10(self.p2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
+            ax[1,1].set_title('hole density @channel')
+            plt.colorbar(ax11)
+            #
+            plt.savefig(output_filename+'_1.pdf')
             #
             plt.close()
 
@@ -1821,7 +1848,7 @@ print('  RZ nodes = %i (sparse matrix size)' % (grid_solver.RZ_nodes_len))
 
 # CPU time check
 print('CPU time check list')
-print('  %s %s %s threads' % (cpuinfo.get_cpu_info()['brand_raw'], platform.processor(), psutil.cpu_count(logical=True)))
+print('  CPU %sea (%s threads)' % (psutil.cpu_count(logical=False), psutil.cpu_count(logical=True)))
 print('  @add_material_parameters() = %.1e sec' % cpu_time_1)
 print('  @set_unit_cell_R_grid() = %.1e sec' % cpu_time_2)
 print('  @set_unit_cell_Z_grid() = %.1e sec' % cpu_time_3)
@@ -1928,6 +1955,26 @@ if True:
     # CPU time check
     print('  @make_continuity_matrix() = %.1e sec' % cpu_time_10)
 
+    # geometry
+    cd = uc_inward_thk_dr['CD']
+    ponoa_box = uc_inward_thk_dr['BOX_SIO2']['thk']
+    ponoa_ctn = uc_inward_thk_dr['CTN']['thk']
+    ponoa_tox = uc_inward_thk_dr['TOX']['thk']
+    ponoa_ch  = uc_inward_thk_dr['SI']['thk']
+    ponoa_alo = uc_outward_thk_dr['WL000_ON_N2']['BOX_AL2O3']['thk']
+    
+    on_o1 = uc_z_on_thk_dz['WL000_ON_O1']['thk']
+    on_n1 = uc_z_on_thk_dz['WL000_ON_N1']['thk']
+    on_n2 = uc_z_on_thk_dz['WL000_ON_N2']['thk']
+    on_n3 = uc_z_on_thk_dz['WL000_ON_N3']['thk']
+    on_o2 = uc_z_on_thk_dz['WL000_ON_O2']['thk']
+    on_o  = on_o1 + on_o2
+    on_n  = on_n1 + on_n2 + on_n3
+    on_pitch = on_o + on_n
+
+    identifier = 'cd_%.1f_ponoa_%i_%i_%i_%i_%i_on_%i_%i_%i' % \
+                 (cd, ponoa_ch, ponoa_tox, ponoa_ctn, ponoa_box, ponoa_alo, on_o, on_n, on_pitch)
+
     # WL bias sweep info
     wl_bias_sweep_info = {}
     wl_bias_sweep_info[0] = {}
@@ -1960,13 +2007,16 @@ if True:
         sl_range       = np.linspace(info_sl[0],       info_sl[1],       range_div)
 
         # Gummel iteration parameter
-        gi_w = 0.90
-        gi_error_v = 5e-6
+        gi_w = 0.99
+        gi_error_v = 1e-4
         gi_error_n = 1e22
 
         # timeline
         timeline_full = [1e-12] # np.logspace(-10, -9, 11)
         output_index = 10
+
+        # log
+        cal_log = []
 
         # LOOP 2: WL bias sweep
         for each_div_index in range(range_div):
@@ -1987,6 +2037,7 @@ if True:
             grid_solver.make_external_bias_vector(external_bias_conditions=ext_bias, workfunction=4.8, model_type='MIS')
 
             # LOOP 3: time evolution
+            output_filename = ''
             for each_time_index, each_time in enumerate(timeline_full):
                 # calculating dt
                 if each_time_index == 0:
@@ -2009,19 +2060,11 @@ if True:
                 error_v, error_n, error_p = 1.0, 1.0e30, 1.0e30
                 gi_no = 0
                 while error_v > gi_error_v:
-                    # output filename
-                    if each_time_index % output_index == 0:
-                        output_filename = 'SG_scheme_Gummel_iter_%.3f_%.3f_%.3f_%.3f_elapsed_time_%4i_%.3e_dt_%.3e.png' % \
-                                          (sel_wl_range[each_div_index], unsel_wl_range[each_div_index], \
-                                           bl_range[each_div_index], sl_range[each_div_index], each_time_index, each_time, dt)
-                    else:
-                        output_filename = False
-                        
                     # poission equation solver
                     grid_solver.solve_poisson_equation(model_type='MIS')
                     
                     # continuity equation solver
-                    grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
+                    grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
 
                     # calculating error
                     error_v = np.max( np.abs( old_v1 - grid_solver.V1 ) )
@@ -2041,17 +2084,47 @@ if True:
                     # calculate BL current
                     In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
 
-                    #
-                    gi_no += 1
+                    # log
+                    output_format = '%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.3f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e'
+                    output_value  = [sweep_loop_no, each_div_index, \
+                                     sel_wl_range[each_div_index], unsel_wl_range[each_div_index], \
+                                     bl_range[each_div_index], sl_range[each_div_index], \
+                                     gi_no, each_time_index, gi_w, each_time, dt, \
+                                     error_v, error_n, error_p, \
+                                     In_bl, Ip_bl, In_sl, Ip_sl]
+                    cal_log.append(output_value)
 
                     # debugging
-                    output_format = '%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e'
-                    output_value  = tuple([sweep_loop_no, each_div_index, \
-                                           sel_wl_range[each_div_index], unsel_wl_range[each_div_index], \
-                                           bl_range[each_div_index], sl_range[each_div_index], \
-                                           gi_no, each_time_index, each_time, dt,\
-                                           error_v, error_n, error_p, \
-                                           In_bl, Ip_bl, In_sl, Ip_sl])
-                    print(output_format % output_value)
+                    if gi_no % 100 == 0:
+                        print(time.ctime(), identifier)
+                        print(output_format % tuple(output_value))
+
+                    # Gummel loop count
+                    gi_no += 1
+
+            # output filename
+            output_filename = '%iWL_SG_scheme_Gummel_iter_%.3f_%.3f_%.3f_%.3f_elapsed_time_%i_%.3e_dt_%.3e_w_%.3f_%i' % \
+                              (wl_ea, sel_wl_range[each_div_index], unsel_wl_range[each_div_index], \
+                               bl_range[each_div_index], sl_range[each_div_index], each_time_index, each_time, dt, gi_w, gi_no)
+                        
+            # poission equation solver
+            grid_solver.solve_poisson_equation(model_type='MIS')
+                    
+            # continuity equation solver
+            grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
+
+            # debugging
+            print(time.ctime(), identifier)
+            print(output_format % tuple(output_value))
+
+            # file output
+            fid_out = open(output_filename + '.txt', 'w')
+            fid_out.write('IDENTIFIER,WLs,LOOP_C,LOOP_V,SEL_WL_V,UNSEL_WL_V,BL_V,SL_V,GUMMEL_ITER,LOOP_T,GUMMEL_W,TIME,TIME_dt,' + \
+                          'ERROR_V,ERROR_N,ERROR_P,In_BL,Ip_BL,In_SL,Ip_SL' + '\n')
+            output_format = '%s,%i,%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.3f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e' + '\n'
+            for each_line_data in cal_log:
+                fid_out.write(output_format % tuple([identifier, wl_ea] + each_line_data))
+            fid_out.close()
+
 
      
