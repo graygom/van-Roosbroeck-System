@@ -1637,6 +1637,86 @@ class SOLVER(GRID):
         # CPU time
         return end-start
 
+    # ===== making N P matrix (steady state solution) =====
+    def make_N_P_matrix_steady_state(self):
+        # CPU time
+        start = time.time()
+        
+        # making sparse matrix (continuity equation)
+        self.dN = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
+        self.dP = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
+
+        # sweep target points
+        for each_point in self.CM.keys():
+            # selected target point
+            each_r, each_z = each_point
+            tg_index = self.R_nodes_len * each_z + each_r
+            
+            # sweep neighbor points around selected target point
+            for neighbor_point in self.CM[each_point].keys():
+                # selected neighbor point
+                neighbor_index = self.CM[each_point][neighbor_point]['index']
+                n_CM_coeff = self.CM[each_point][neighbor_point]['n_CM_coeff']
+                p_CM_coeff = self.CM[each_point][neighbor_point]['p_CM_coeff']
+                
+                # r-1, z
+                if neighbor_point == 'rm1_z':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_f[ each_r-1, each_z+0 ]
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_b[ each_r-1, each_z+0 ]
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_b[ each_r-1, each_z+0 ]
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_f[ each_r-1, each_z+0 ]
+                    
+                # r+1, z
+                if neighbor_point == 'rp1_z':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_b[ each_r+0, each_z+0 ]
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_f[ each_r+0, each_z+0 ]
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_f[ each_r+0, each_z+0 ]
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_b[ each_r+0, each_z+0 ]
+                    
+                # r, z-1
+                if neighbor_point == 'r_zm1':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ]
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ]
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ]
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ]
+                    
+                # r, z+1
+                if neighbor_point == 'r_zp1':   
+                    # change in electron density
+                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ]
+                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ]
+                    # change in hole density
+                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ]
+                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ]
+
+        # sweep other points
+        for each_r in range(self.R_nodes_len):
+            for each_z in range(self.Z_nodes_len):
+                #
+                tg_index = self.R_nodes_len * each_z + each_r
+                #
+                if self.dN[tg_index, tg_index] == 0.0:
+                    self.dN[tg_index, tg_index] = 1.0
+                #
+                if self.dP[tg_index, tg_index] == 0.0:
+                    self.dP[tg_index, tg_index] = 1.0
+
+        # CSR format
+        self.dNcsr = self.dN.tocsr()
+        self.dPcsr = self.dP.tocsr()
+
+        # CPU time
+        end = time.time()
+
+        # CPU time
+        return end-start
+
     # ===== solving continuity equation  =====
     def solve_continuity_equation(self, dt, output_filename=False):
         # CPU time
@@ -1648,6 +1728,86 @@ class SOLVER(GRID):
         # sparse matrix solver for continuity equation
         self.n1 = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 )
         self.p1 = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 )
+
+        # 2D visualization 
+        self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
+        self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T
+        
+        # debugging
+        if output_filename != False:
+            #
+            z = range(self.Z_nodes_len)
+            r = range(self.R_nodes_len)
+            Z, R = np.meshgrid(z, r)
+            #
+            fig, ax = plt.subplots(2, 2, figsize=(10,8))
+            ax00 = ax[0,0].imshow(self.V2, origin='lower')     # 'RdBu'
+            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.8)
+            ax[0,0].set_title('electric potential')
+            plt.colorbar(ax00)
+            #
+            ax01 = ax[0,1].imshow(self.E, origin='lower')
+            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.8)
+            ax[0,1].set_title('electric field')
+            plt.colorbar(ax01)
+            #
+            ax10 = ax[1,0].imshow(np.log10(self.n2+1), origin='lower')
+            ax[1,0].contour(Z, R, np.log10(self.n2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
+            ax[1,0].set_title('electron density @channel')
+            plt.colorbar(ax10)
+            #
+            ax11 = ax[1,1].imshow(np.log10(self.p2+1), origin='lower')
+            ax[1,1].contour(Z, R, np.log10(self.p2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
+            ax[1,1].set_title('hole density @channel')
+            plt.colorbar(ax11)
+            #
+            plt.savefig(output_filename+'_0.pdf')
+            #
+            plt.close()
+            
+            #
+            fig, ax = plt.subplots(2, 2, figsize=(10,8))
+            ax00 = ax[0,0].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
+            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.8)
+            ax[0,0].set_title('electric potential')
+            plt.colorbar(ax00)
+            #
+            ax01 = ax[0,1].imshow(self.E, origin='lower', cmap='coolwarm')
+            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.8)
+            ax[0,1].set_title('electric field')
+            plt.colorbar(ax01)
+            #
+            ax10 = ax[1,0].imshow(np.log10(self.n2+1), origin='lower', cmap='coolwarm')
+            ax[1,0].contour(Z, R, np.log10(self.n2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
+            ax[1,0].set_title('electron density @channel')
+            plt.colorbar(ax10)
+            #
+            ax11 = ax[1,1].imshow(np.log10(self.p2+1), origin='lower', cmap='coolwarm')
+            ax[1,1].contour(Z, R, np.log10(self.p2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
+            ax[1,1].set_title('hole density @channel')
+            plt.colorbar(ax11)
+            #
+            plt.savefig(output_filename+'_1.pdf')
+            #
+            plt.close()
+
+        # CPU time
+        end = time.time()
+
+        # CPU time
+        return end-start
+
+    # ===== solving continuity equation (steady state solution) =====
+    def solve_continuity_equation_steady_state(self, output_filename=False):
+        # CPU time
+        start = time.time()
+        
+        # updating N, P matrix for continuity equation
+        self.make_N_P_matrix_steady_state()
+        
+        # sparse matrix solver for continuity equation
+        self.n1 = sc.sparse.linalg.spsolve(self.dNcsr, self.n1 )
+        self.p1 = sc.sparse.linalg.spsolve(self.dPcsr, self.p1 )
 
         # 2D visualization 
         self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
@@ -1857,12 +2017,12 @@ for each_wl in range(wl_ea):
 # inside plug (USER INPUT)
 uc_inward_thk_dr = {}
 uc_inward_thk_dr['CD']         = 1200                                       # angstrom
-uc_inward_thk_dr['BOX_SIO2']   = {'mat_no':32, 'thk':70.0,  'dr':5.0}       # angstrom (1st layer)
-uc_inward_thk_dr['CTN']        = {'mat_no':31, 'thk':50.0,  'dr':5.0}       # angstrom (2nd layer)
-uc_inward_thk_dr['TOX']        = {'mat_no':30, 'thk':50.0,  'dr':5.0}       # angstrom (3rd layer)
-uc_inward_thk_dr['SI']         = {'mat_no':20, 'thk':70.0,  'dr':5.0}       # angstrom (4th layer)
-uc_inward_thk_dr['LINER']      = {'mat_no':11, 'thk':120.0, 'dr':5.0}       # angstrom (5th layer)
-uc_inward_thk_dr['VOID']       = {'mat_no':10, 'thk':-1,    'dr':5.0}       # angstrom (6th layer)
+uc_inward_thk_dr['BOX_SIO2']   = {'mat_no':32, 'thk':70.0,  'dr':10.0}       # angstrom (1st layer)
+uc_inward_thk_dr['CTN']        = {'mat_no':31, 'thk':50.0,  'dr':10.0}       # angstrom (2nd layer)
+uc_inward_thk_dr['TOX']        = {'mat_no':30, 'thk':50.0,  'dr':10.0}       # angstrom (3rd layer)
+uc_inward_thk_dr['SI']         = {'mat_no':20, 'thk':70.0,  'dr':10.0}       # angstrom (4th layer)
+uc_inward_thk_dr['LINER']      = {'mat_no':11, 'thk':120.0, 'dr':10.0}       # angstrom (5th layer)
+uc_inward_thk_dr['VOID']       = {'mat_no':10, 'thk':-1,    'dr':10.0}       # angstrom (6th layer)
 
 # outside plug & z stacks (USER INPUT)
 uc_outward_thk_dr = {}
@@ -1873,25 +2033,25 @@ for each_wl in range(wl_ea):
     each_wl_no   = 100 + each_wl
     #
     uc_outward_thk_dr[each_wl_name+'_ON_O1'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_O1']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
-    uc_z_on_thk_dz[   each_wl_name+'_ON_O1'] = {'thk':80.0,  'dz':5.0}   # angstrom
+    uc_outward_thk_dr[each_wl_name+'_ON_O1']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':10.0}     # angstrom (1st layer)
+    uc_z_on_thk_dz[   each_wl_name+'_ON_O1'] = {'thk':80.0,  'dz':10.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_N1'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_N1']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
-    uc_z_on_thk_dz[   each_wl_name+'_ON_N1'] = {'thk':30.0,  'dz':5.0}   # angstrom
+    uc_outward_thk_dr[each_wl_name+'_ON_N1']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':10.0}     # angstrom (1st layer)
+    uc_z_on_thk_dz[   each_wl_name+'_ON_N1'] = {'thk':30.0,  'dz':10.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_N2'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_N2']['BOX_AL2O3']  = {'mat_no':33,         'thk':30.0,  'dr':5.0}     # angstrom (1st layer)
-    uc_outward_thk_dr[each_wl_name+'_ON_N2'][each_wl_name] = {'mat_no':each_wl_no, 'thk':70.0,  'dr':5.0}     # angstrom (2nd layer)
-    uc_z_on_thk_dz[   each_wl_name+'_ON_N2'] = {'thk':190.0, 'dz':5.0}   # angstrom
+    uc_outward_thk_dr[each_wl_name+'_ON_N2']['BOX_AL2O3']  = {'mat_no':33,         'thk':30.0,  'dr':10.0}     # angstrom (1st layer)
+    uc_outward_thk_dr[each_wl_name+'_ON_N2'][each_wl_name] = {'mat_no':each_wl_no, 'thk':70.0,  'dr':10.0}     # angstrom (2nd layer)
+    uc_z_on_thk_dz[   each_wl_name+'_ON_N2'] = {'thk':190.0, 'dz':10.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_N3'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_N3']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
-    uc_z_on_thk_dz[   each_wl_name+'_ON_N3'] = {'thk':30.0,  'dz':5.0}   # angstrom
+    uc_outward_thk_dr[each_wl_name+'_ON_N3']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':10.0}     # angstrom (1st layer)
+    uc_z_on_thk_dz[   each_wl_name+'_ON_N3'] = {'thk':30.0,  'dz':10.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_O2'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_O2']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
-    uc_z_on_thk_dz[   each_wl_name+'_ON_O2'] = {'thk':80.0,  'dz':5.0}   # angstrom
+    uc_outward_thk_dr[each_wl_name+'_ON_O2']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':10.0}     # angstrom (1st layer)
+    uc_z_on_thk_dz[   each_wl_name+'_ON_O2'] = {'thk':80.0,  'dz':10.0}   # angstrom
 
 # preparing grid (USER INPUT)
 grid_solver = SOLVER()
@@ -1903,7 +2063,7 @@ cpu_time_5 = grid_solver.set_unit_cell_RZ_mis_region()
 cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
 cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
 cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, \
-                                                      doping=['n', 1e20], ct_doping=['n', [1e23, 1e22, 1e21]])
+                                                      doping=['n', 1e20], ct_doping=['n', [1e22, 3e21, 6e20]])
 cpu_time_9 = grid_solver.make_poisson_matrix()
 
 # FDM size
@@ -2043,14 +2203,14 @@ if True:
     # WL bias sweep info
     wl_bias_sweep_info = {}
     wl_bias_sweep_info[0] = {}
-    wl_bias_sweep_info[0]['div'] = 71
-    wl_bias_sweep_info[0]['sel_wl']   = [+0.0, -4.0]
+    wl_bias_sweep_info[0]['div'] = 36
+    wl_bias_sweep_info[0]['sel_wl']   = [+0.0, -3.0]
     wl_bias_sweep_info[0]['unsel_wl'] = [+0.0, +7.0]
     wl_bias_sweep_info[0]['bl']       = [+0.0, +0.5]
     wl_bias_sweep_info[0]['sl']       = [+0.0, +0.0]
     wl_bias_sweep_info[1] = {}
-    wl_bias_sweep_info[1]['div'] = 111
-    wl_bias_sweep_info[1]['sel_wl']   = [-4.0, +7.0]
+    wl_bias_sweep_info[1]['div'] = 61
+    wl_bias_sweep_info[1]['sel_wl']   = [-3.0, +3.0]
     wl_bias_sweep_info[1]['unsel_wl'] = [+7.0, +7.0]
     wl_bias_sweep_info[1]['bl']       = [+0.5, +0.5]
     wl_bias_sweep_info[1]['sl']       = [+0.0, +0.0]
@@ -2072,8 +2232,8 @@ if True:
         sl_range       = np.linspace(info_sl[0],       info_sl[1],       range_div)
 
         # Gummel iteration parameter
-        gi_w = 0.95
-        gi_error_v = 1e-4
+        gi_w = 0.99
+        gi_error_v = 2e-4
         gi_error_n = 1e22
 
         # timeline
@@ -2113,7 +2273,8 @@ if True:
                 grid_solver.solve_poisson_equation(model_type='MIS')
                     
                 # continuity equation solver
-                grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
+                #grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
+                grid_solver.solve_continuity_equation_steady_state(output_filename=False)
 
                 #
                 old_v1 = grid_solver.V1
@@ -2128,7 +2289,8 @@ if True:
                     grid_solver.solve_poisson_equation(model_type='MIS')
                     
                     # continuity equation solver
-                    grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
+                    #grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
+                    grid_solver.solve_continuity_equation_steady_state(output_filename=False)
 
                     # calculating error
                     error_v = np.max( np.abs( old_v1 - grid_solver.V1 ) )
@@ -2137,8 +2299,8 @@ if True:
 
                     # mixing decoupled solutions
                     grid_solver.V1 = old_v1 * gi_w + grid_solver.V1 * ( 1.0 - gi_w )
-                    grid_solver.n1 = np.power(10.0, ( np.log10(old_n1+1.0) * gi_w + np.log10(grid_solver.n1+1.0) * ( 1.0 - gi_w ) ) )
-                    grid_solver.p1 = np.power(10.0, ( np.log10(old_p1+1.0) * gi_w + np.log10(grid_solver.p1+1.0) * ( 1.0 - gi_w ) ) )
+                    grid_solver.n1 = np.power(10.0, ( np.log10(old_n1+1.0e2) * gi_w + np.log10(grid_solver.n1+1.0e2) * ( 1.0 - gi_w ) ) )
+                    grid_solver.p1 = np.power(10.0, ( np.log10(old_p1+1.0e2) * gi_w + np.log10(grid_solver.p1+1.0e2) * ( 1.0 - gi_w ) ) )
 
                     #
                     old_v1 = grid_solver.V1
@@ -2175,7 +2337,8 @@ if True:
             grid_solver.solve_poisson_equation(model_type='MIS')
                     
             # continuity equation solver
-            grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
+            #grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
+            grid_solver.solve_continuity_equation_steady_state(output_filename=output_filename)
 
             # debugging
             print(time.ctime(), identifier)
@@ -2192,6 +2355,8 @@ if True:
 
             # file output 2
             grid_solver.save_solutions(output_filename = output_filename + '_sol.txt')
+
+
 
 
      
