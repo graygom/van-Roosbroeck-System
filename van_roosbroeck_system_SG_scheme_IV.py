@@ -1765,6 +1765,71 @@ class SOLVER(GRID):
         # return
         return [In_bl, Ip_bl, In_sl, Ip_sl]
 
+    # ===== save solutions =====
+    def save_solutions(self, output_filename):
+        #
+        fid_out = open(output_filename, 'w')
+        
+        #
+        header    = 'R_index,Z_index,R,Z,EP,MATno,V,Er,Ez,E,FC,n,p' + '\n'
+        data_type = 'Integer,Integer,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real' + '\n'
+        fid_out.write(header)
+        fid_out.write(data_type)
+        
+        #
+        output_format = '%i,%i,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e' + '\n'
+
+        for r_index in range(self.R_nodes_len):
+            for z_index in range(self.Z_nodes_len):
+                #
+                r = self.RZ_R[r_index, z_index]
+                z = self.RZ_Z[r_index, z_index]
+                #
+                try:
+                    ep = self.RZ_EP[r_index, z_index]
+                except IndexError:
+                    ep = 1.0e50
+                #
+                try:
+                    mat_no = self.RZ_MATno[r_index, z_index]
+                except IndexError:
+                    mat_no = 1.0e50
+                #
+                poisson_v  = self.V2[r_index, z_index]
+                poisson_fc = self.FC2[r_index, z_index]
+                #
+                try:
+                    poisson_er = self.Er[r_index, z_index]
+                except IndexError:
+                    poisson_er = 1.0e50
+                #
+                try:
+                    poisson_ez = self.Ez[r_index, z_index]
+                except IndexError:
+                    poisson_ez = 1.0e50
+                #
+                try:
+                    poisson_e  = self.E[r_index, z_index]
+                except IndexError:
+                    poisson_e  = 1.0e50
+                #
+                continuity_n = self.n2[r_index, z_index]
+                continuity_p = self.p2[r_index, z_index]
+
+                #
+                output_values = [r_index, z_index, r, z, ep, mat_no, \
+                                 poisson_v, poisson_er, poisson_ez, poisson_e, poisson_fc, \
+                                 continuity_n, continuity_p]
+
+                #
+                fid_out.write(output_format % tuple(output_values))
+
+        #
+        fid_out.close()
+        
+
+        
+
 
 #
 # MAIN
@@ -2007,13 +2072,12 @@ if True:
         sl_range       = np.linspace(info_sl[0],       info_sl[1],       range_div)
 
         # Gummel iteration parameter
-        gi_w = 0.99
+        gi_w = 0.95
         gi_error_v = 1e-4
         gi_error_n = 1e22
 
         # timeline
-        timeline_full = [1e-12] # np.logspace(-10, -9, 11)
-        output_index = 10
+        timeline_full = [1e-10] # np.logspace(-10, -9, 11)
 
         # log
         cal_log = []
@@ -2117,7 +2181,7 @@ if True:
             print(time.ctime(), identifier)
             print(output_format % tuple(output_value))
 
-            # file output
+            # file output 1
             fid_out = open(output_filename + '.txt', 'w')
             fid_out.write('IDENTIFIER,WLs,LOOP_C,LOOP_V,SEL_WL_V,UNSEL_WL_V,BL_V,SL_V,GUMMEL_ITER,LOOP_T,GUMMEL_W,TIME,TIME_dt,' + \
                           'ERROR_V,ERROR_N,ERROR_P,In_BL,Ip_BL,In_SL,Ip_SL' + '\n')
@@ -2125,6 +2189,9 @@ if True:
             for each_line_data in cal_log:
                 fid_out.write(output_format % tuple([identifier, wl_ea] + each_line_data))
             fid_out.close()
+
+            # file output 2
+            grid_solver.save_solutions(output_filename = output_filename + '_sol.txt')
 
 
      
