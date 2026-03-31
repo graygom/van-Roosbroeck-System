@@ -462,43 +462,64 @@ class GRID:
                 print('set_semiconductor_parameters() > invalid dopant type')
 
         # contact doping profile (initialization)
+        cont_length = 11
+        grad_length = 11
         ct_dopant_type = ct_doping[0]                                       # 'n' or 'p'
         ct_dopant_density = ct_doping[1]                                    # [m]^-3
+        ct_dopant_density_grad = np.logspace(np.log10(ct_dopant_density[0]), np.log10(ct_dopant_density[1]), grad_length)
+        
         for each_point in (bl_sl_points):
             r_node, z_node = each_point
-            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)          # 1D array index
-            #
-            if (z_node == 0):
-                index_r_zp1 = self.R_nodes_len * (z_node+1) + (r_node+0)    # 1D array index
-                index_r_zp2 = self.R_nodes_len * (z_node+2) + (r_node+0)    # 1D array index
-                if ct_dopant_type =='n':
-                    self.DP[index_r_z]   = +ct_dopant_density[0]            # w/ ionized polarity
-                    self.DP[index_r_zp1] = +ct_dopant_density[1]            # w/ ionized polarity
-                    self.DP[index_r_zp2] = +ct_dopant_density[2]            # w/ ionized polarity
-                elif ct_dopant_type =='p':
-                    self.DP[index_r_z]   = -ct_dopant_density[0]            # w/ ionized polarity
-                    self.DP[index_r_zp1] = -ct_dopant_density[1]            # w/ ionized polarity
-                    self.DP[index_r_zp2] = -ct_dopant_density[2]            # w/ ionized polarity
-                else:
-                    print('set_semiconductor_parameters() > invalid dopant type, contact')
-            #
-            if (z_node == (self.Z_nodes_len-1)):
-                index_r_zm1 = self.R_nodes_len * (z_node-1) + (r_node+0)    # 1D array index
-                index_r_zm2 = self.R_nodes_len * (z_node-2) + (r_node+0)    # 1D array index
-                if ct_dopant_type =='n':
-                    self.DP[index_r_z]   = +ct_dopant_density[0]            # w/ ionized polarity
-                    self.DP[index_r_zm1] = +ct_dopant_density[1]            # w/ ionized polarity
-                    self.DP[index_r_zm2] = +ct_dopant_density[2]            # w/ ionized polarity
-                elif ct_dopant_type =='p':
-                    self.DP[index_r_z]   = -ct_dopant_density[0]            # w/ ionized polarity
-                    self.DP[index_r_zm1] = -ct_dopant_density[1]            # w/ ionized polarity
-                    self.DP[index_r_zm2] = -ct_dopant_density[2]            # w/ ionized polarity
-                else:
-                    print('set_semiconductor_parameters() > invalid dopant type, contact')
+            
+            # dopant density constant region
+            for z_node_add in range(cont_length):
+                #
+                if (z_node == 0):
+                    index_r_z = self.R_nodes_len * (z_node+z_node_add) + (r_node+0)          # 1D array index
+                    if ct_dopant_type =='n':
+                        self.DP[index_r_z]   = +ct_dopant_density[0]            # w/ ionized polarity
+                    elif ct_dopant_type =='p':
+                        self.DP[index_r_z]   = -ct_dopant_density[0]            # w/ ionized polarity
+                    else:
+                        print('set_semiconductor_parameters() > invalid dopant type, contact')
+                #
+                if (z_node == (self.Z_nodes_len-1)):
+                    index_r_z = self.R_nodes_len * (z_node-z_node_add) + (r_node+0)          # 1D array index
+                    if ct_dopant_type =='n':
+                        self.DP[index_r_z]   = +ct_dopant_density[0]            # w/ ionized polarity
+                    elif ct_dopant_type =='p':
+                        self.DP[index_r_z]   = -ct_dopant_density[0]            # w/ ionized polarity
+                    else:
+                        print('set_semiconductor_parameters() > invalid dopant type, contact')
+                        
+            # dopant density gradiant region
+            for z_node_add in range(grad_length):
+                #
+                if (z_node == 0):
+                    index_r_z = self.R_nodes_len * (z_node+cont_length+z_node_add) + (r_node+0)          # 1D array index
+                    if ct_dopant_type =='n':
+                        self.DP[index_r_z]   = +ct_dopant_density_grad[z_node_add]            # w/ ionized polarity
+                    elif ct_dopant_type =='p':
+                        self.DP[index_r_z]   = -ct_dopant_density_grad[z_node_add]            # w/ ionized polarity
+                    else:
+                        print('set_semiconductor_parameters() > invalid dopant type, contact')
+                #
+                if (z_node == (self.Z_nodes_len-1)):
+                    index_r_z = self.R_nodes_len * (z_node-cont_length-z_node_add) + (r_node+0)          # 1D array index
+                    if ct_dopant_type =='n':
+                        self.DP[index_r_z]   = +ct_dopant_density_grad[z_node_add]            # w/ ionized polarity
+                    elif ct_dopant_type =='p':
+                        self.DP[index_r_z]   = -ct_dopant_density_grad[z_node_add]            # w/ ionized polarity
+                    else:
+                        print('set_semiconductor_parameters() > invalid dopant type, contact')
 
-        #self.DP2 = self.DP.reshape(self.Z_nodes_len, self.R_nodes_len).T
-        #plt.imshow(self.DP2)
-        #plt.show()
+        # debugging
+        if False:
+            self.DP2 = self.DP.reshape(self.Z_nodes_len, self.R_nodes_len).T
+            fig, ax = plt.subplots(2, 1)
+            ax[0].imshow(self.RZ_MATno, origin='lower')
+            ax[1].imshow(self.DP2)
+            plt.show()
 
         # intrinsic carrier density (initialization)
         self.N_INT = np.zeros(self.RZ_nodes_len)
@@ -2063,7 +2084,7 @@ cpu_time_5 = grid_solver.set_unit_cell_RZ_mis_region()
 cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
 cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
 cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, \
-                                                      doping=['n', 1e20], ct_doping=['n', [1e22, 3e21, 5e20]])
+                                                      doping=['n', 1e20], ct_doping=['n', [1e22, 1e20]])
 cpu_time_9 = grid_solver.make_poisson_matrix()
 
 # FDM size
@@ -2203,15 +2224,15 @@ if True:
     # WL bias sweep info
     wl_bias_sweep_info = {}
     wl_bias_sweep_info[0] = {}
-    wl_bias_sweep_info[0]['div'] = 71
-    wl_bias_sweep_info[0]['sel_wl']   = [+0.0, -3.0]
-    wl_bias_sweep_info[0]['unsel_wl'] = [+0.0, +7.0]
+    wl_bias_sweep_info[0]['div'] = 30 + 1
+    wl_bias_sweep_info[0]['sel_wl']   = [0.0, -3.0]
+    wl_bias_sweep_info[0]['unsel_wl'] = [0.0, +3.0]
     wl_bias_sweep_info[0]['bl']       = [+0.0, +0.5]
     wl_bias_sweep_info[0]['sl']       = [+0.0, +0.0]
     wl_bias_sweep_info[1] = {}
-    wl_bias_sweep_info[1]['div'] = 61
+    wl_bias_sweep_info[1]['div'] = 60 + 1
     wl_bias_sweep_info[1]['sel_wl']   = [-3.0, +3.0]
-    wl_bias_sweep_info[1]['unsel_wl'] = [+7.0, +7.0]
+    wl_bias_sweep_info[1]['unsel_wl'] = [+3.0, +3.0]
     wl_bias_sweep_info[1]['bl']       = [+0.5, +0.5]
     wl_bias_sweep_info[1]['sl']       = [+0.0, +0.0]
     
@@ -2232,12 +2253,12 @@ if True:
         sl_range       = np.linspace(info_sl[0],       info_sl[1],       range_div)
 
         # Gummel iteration parameter
-        gi_w = 0.99
-        gi_error_v = 6e-4
+        gi_w = 0.999
+        gi_error_v = 2e-2
         gi_error_n = 1e22
 
         # timeline
-        timeline_full = [1e-10] # np.logspace(-10, -9, 11)
+        timeline_full = [1e-1] # np.logspace(-10, -9, 11)
 
         # log
         cal_log = []
@@ -2247,6 +2268,9 @@ if True:
             
             # CPU time
             start = time.time()
+
+            #
+            print(time.ctime(), identifier)
 
             # ext. bias
             ext_bias = {10001:bl_range[each_div_index], 10002:sl_range[each_div_index]}             # BL, SL ext. bias
@@ -2273,8 +2297,8 @@ if True:
                 grid_solver.solve_poisson_equation(model_type='MIS')
                     
                 # continuity equation solver
-                #grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
-                grid_solver.solve_continuity_equation_steady_state(output_filename=False)
+                grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
+                #grid_solver.solve_continuity_equation_steady_state(output_filename=False)
 
                 #
                 old_v1 = grid_solver.V1
@@ -2282,15 +2306,15 @@ if True:
                 old_p1 = grid_solver.p1
 
                 # LOOP 4: Gummel iteration
-                error_v, error_n, error_p = 1.0, 1.0e30, 1.0e30
+                error_v, error_n, error_p = 1e30, 1.0e40, 1.0e40
                 gi_no = 0
                 while error_v > gi_error_v:
                     # poission equation solver
                     grid_solver.solve_poisson_equation(model_type='MIS')
                     
                     # continuity equation solver
-                    #grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
-                    grid_solver.solve_continuity_equation_steady_state(output_filename=False)
+                    grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
+                    #grid_solver.solve_continuity_equation_steady_state(output_filename=False)
 
                     # calculating error
                     error_v = np.max( np.abs( old_v1 - grid_solver.V1 ) )
@@ -2299,8 +2323,8 @@ if True:
 
                     # mixing decoupled solutions
                     grid_solver.V1 = old_v1 * gi_w + grid_solver.V1 * ( 1.0 - gi_w )
-                    grid_solver.n1 = np.power(10.0, ( np.log10(old_n1+1.0e2) * gi_w + np.log10(grid_solver.n1+1.0e2) * ( 1.0 - gi_w ) ) )
-                    grid_solver.p1 = np.power(10.0, ( np.log10(old_p1+1.0e2) * gi_w + np.log10(grid_solver.p1+1.0e2) * ( 1.0 - gi_w ) ) )
+                    grid_solver.n1 = np.power(10.0, ( np.log10(old_n1+1.0e-1) * gi_w + np.log10(grid_solver.n1+1.0e-1) * ( 1.0 - gi_w ) ) )
+                    grid_solver.p1 = np.power(10.0, ( np.log10(old_p1+1.0e-1) * gi_w + np.log10(grid_solver.p1+1.0e-1) * ( 1.0 - gi_w ) ) )
 
                     #
                     old_v1 = grid_solver.V1
@@ -2311,7 +2335,7 @@ if True:
                     In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
 
                     # log
-                    output_format = '%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.3f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e'
+                    output_format = '%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.4f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e'
                     output_value  = [sweep_loop_no, each_div_index, \
                                      sel_wl_range[each_div_index], unsel_wl_range[each_div_index], \
                                      bl_range[each_div_index], sl_range[each_div_index], \
@@ -2322,7 +2346,6 @@ if True:
 
                     # debugging
                     if gi_no % 100 == 0:
-                        print(time.ctime(), identifier)
                         print(output_format % tuple(output_value))
 
                     # Gummel loop count
@@ -2337,24 +2360,24 @@ if True:
             grid_solver.solve_poisson_equation(model_type='MIS')
                     
             # continuity equation solver
-            #grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
-            grid_solver.solve_continuity_equation_steady_state(output_filename=output_filename)
+            grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
+            #grid_solver.solve_continuity_equation_steady_state(output_filename=output_filename)
 
             # debugging
-            print(time.ctime(), identifier)
             print(output_format % tuple(output_value))
 
             # file output 1
             fid_out = open(output_filename + '.txt', 'w')
             fid_out.write('IDENTIFIER,WLs,LOOP_C,LOOP_V,SEL_WL_V,UNSEL_WL_V,BL_V,SL_V,GUMMEL_ITER,LOOP_T,GUMMEL_W,TIME,TIME_dt,' + \
                           'ERROR_V,ERROR_N,ERROR_P,In_BL,Ip_BL,In_SL,Ip_SL' + '\n')
-            output_format = '%s,%i,%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.3f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e' + '\n'
+            output_format = '%s,%i,%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.4f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e' + '\n'
             for each_line_data in cal_log:
                 fid_out.write(output_format % tuple([identifier, wl_ea] + each_line_data))
             fid_out.close()
 
             # file output 2
             grid_solver.save_solutions(output_filename = output_filename + '_sol.txt')
+
 
                 
 
