@@ -2275,6 +2275,7 @@ if True:
         gi_w = 0.80
         gi_error_v = 1e-4
         gi_error_n = 1e19
+        gi_error_conv = 1e18
 
         # timeline
         timeline_full = [1e-8]  # np.logspace(-10, -9, 11)
@@ -2328,9 +2329,9 @@ if True:
                 old_p2 = grid_solver.p2
 
                 # LOOP 4: Gummel iteration
-                error_v, error_n, error_p = 1.0e40, 1.0e40, 1.0e40
+                error_v, error_n, error_p, error_conv = 1.0e40, 1.0e40, 1.0e40, 1e30
                 gi_no = 0
-                while error_n > gi_error_n:
+                while error_conv > gi_error_conv:
                     # poission equation solver
                     grid_solver.solve_poisson_equation(model_type='MIS')
                     
@@ -2342,6 +2343,7 @@ if True:
                     error_v = np.max( np.abs( old_v1 - grid_solver.V1 ) )
                     error_n = np.max( np.abs( old_n1 - grid_solver.n1 ) )
                     error_p = np.max( np.abs( old_p1 - grid_solver.p1 ) )
+                    error_conv = np.abs( np.max( old_n2[:,1:-1] ) - np.max( grid_solver.n2[:,1:-1] ) )
 
                     # debugging
                     if False:
@@ -2385,9 +2387,10 @@ if True:
                     # debugging
                     if gi_no % 100 == 0:
                         print(output_format % tuple(output_value))
-                        print('%.2e %.2e %.2e, %.2e %.2e %.2e' % \
+                        print('%.2e %.2e %.2e, %.2e %.2e %.2e, %.2e' % \
                               (np.max(grid_solver.n2[:,0]),np.max(grid_solver.n2[:,1:-1]),np.max(grid_solver.n2[:,-1]),\
-                               np.max(grid_solver.p2[:,0]),np.max(grid_solver.p2[:,1:-1]),np.max(grid_solver.p2[:,-1])))
+                               np.max(grid_solver.p2[:,0]),np.max(grid_solver.p2[:,1:-1]),np.max(grid_solver.p2[:,-1]),\
+                               error_conv))
 
                     # Gummel loop count
                     gi_no += 1
@@ -2406,9 +2409,10 @@ if True:
 
             # debugging
             print(('  ' + output_format) % tuple(output_value))
-            print('    %.2e %.2e %.2e, %.2e %.2e %.2e' % \
+            print('    %.2e %.2e %.2e, %.2e %.2e %.2e, %.2e' % \
                    (np.max(grid_solver.n2[:,0]),np.max(grid_solver.n2[:,1:-1]),np.max(grid_solver.n2[:,-1]),\
-                    np.max(grid_solver.p2[:,0]),np.max(grid_solver.p2[:,1:-1]),np.max(grid_solver.p2[:,-1])))
+                    np.max(grid_solver.p2[:,0]),np.max(grid_solver.p2[:,1:-1]),np.max(grid_solver.p2[:,-1]),\
+                    error_conv))
 
             # file output 1
             fid_out = open(output_filename + '.txt', 'w')
