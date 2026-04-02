@@ -2375,8 +2375,9 @@ if True:
                 while error_n > gi_error_n:
 
                     # ext. bias
-                    ext_bias = {10001:bl_range[each_div_index] - In_bl * ext_R_bl,\
-                                10002:sl_range[each_div_index] + In_sl * ext_R_sl}             # BL, SL ext. bias
+                    ext_R_bl_drop, ext_R_sl_drop = In_bl * ext_R_bl, In_sl * ext_R_sl
+                    ext_bias = {10001:bl_range[each_div_index] - ext_R_bl_drop,\
+                                10002:sl_range[each_div_index] + ext_R_sl_drop}             # BL, SL ext. bias
                     for each_wl in range(wl_ea):
                         each_wl_mat_no = 100 + each_wl
                         if each_wl == int(wl_ea/2):
@@ -2426,10 +2427,10 @@ if True:
                     # debugging
                     if gi_no % 100 == 0:
                         print(output_format % tuple(output_value))
-                        print('%.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e,%.2e' % \
+                        print('%.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e' % \
                               (np.max(grid_solver.n2[:,0]),np.max(grid_solver.n1[ch_region_flag]),np.max(grid_solver.n2[:,-1]),\
                                np.max(grid_solver.p2[:,0]),np.max(grid_solver.p1[ch_region_flag]),np.max(grid_solver.p2[:,-1]),\
-                               error_v, error_n, error_p))
+                               error_v, error_n, error_p, ext_R_bl_drop, ext_R_sl_drop))
 
                     # Gummel loop count
                     gi_no += 1
@@ -2448,10 +2449,10 @@ if True:
 
             # debugging
             print(('  ' + output_format) % tuple(output_value))
-            print('    %.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e,%.2e' % \
+            print('    %.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e' % \
                    (np.max(grid_solver.n2[:,0]),np.max(grid_solver.n1[ch_region_flag]),np.max(grid_solver.n2[:,-1]),\
                     np.max(grid_solver.p2[:,0]),np.max(grid_solver.p1[ch_region_flag]),np.max(grid_solver.p2[:,-1]),\
-                    error_v, error_n, error_p))
+                    error_v, error_n, error_p, ext_R_bl_drop, ext_R_sl_drop))
 
             # file output 1
             fid_out = open(output_filename + '.txt', 'w')
