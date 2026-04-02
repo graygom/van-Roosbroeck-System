@@ -2289,6 +2289,10 @@ if True:
     wl_bias_sweep_info[1]['bl']       = [+0.5, +0.5]
     wl_bias_sweep_info[1]['sl']       = [+0.0, +0.0]
 
+    # external resistance
+    ext_R_bl = 2e4
+    ext_R_sl = 1e2
+
     # channel region flag
     ch_region_flag = np.where(grid_solver.CH_FLAG_serial==1.0)
     
@@ -2358,6 +2362,9 @@ if True:
                 grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
                 #grid_solver.solve_continuity_equation_steady_state(output_filename=False)
 
+                # calculate BL, SL terminal current
+                In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
+
                 # error check
                 old_v1 = grid_solver.V1
                 old_n1 = grid_solver.n1
@@ -2366,6 +2373,16 @@ if True:
                 # LOOP 4: Gummel iteration
                 error_v, error_n, error_p, gi_no = 1.0e40, 1.0e40, 1.0e40, 0
                 while error_n > gi_error_n:
+
+                    # ext. bias
+                    ext_bias = {10001:bl_range[each_div_index] - In_bl * ext_R_bl,\
+                                10002:sl_range[each_div_index] + In_sl * ext_R_sl}             # BL, SL ext. bias
+                    for each_wl in range(wl_ea):
+                        each_wl_mat_no = 100 + each_wl
+                        if each_wl == int(wl_ea/2):
+                            ext_bias.update({each_wl_mat_no:sel_wl_range[each_div_index]})                  # sel WL ext. bias
+                        else:
+                            ext_bias.update({each_wl_mat_no:unsel_wl_range[each_div_index]})                # unsel WL ext. bias
 
                     # mixing decoupled solutions from continuity equation solver
                     grid_solver.n1 = old_n1 * gi_w_np + grid_solver.n1 * ( 1.0 - gi_w_np )
@@ -2393,7 +2410,7 @@ if True:
                     old_n1 = grid_solver.n1
                     old_p1 = grid_solver.p1
 
-                    # calculate BL current
+                    # calculate BL, SL terminal current
                     In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
 
                     # log
