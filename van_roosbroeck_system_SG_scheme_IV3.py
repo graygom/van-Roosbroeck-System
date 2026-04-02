@@ -1777,12 +1777,12 @@ class SOLVER(GRID):
             #
             fig, ax = plt.subplots(2, 2, figsize=(10,8))
             ax00 = ax[0,0].imshow(self.V2, origin='lower')     # 'RdBu'
-            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1)
+            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1, levels=np.linspace(-30.0, +30.0, 61*2))
             ax[0,0].set_title('electric potential [V]')
             plt.colorbar(ax00)
             #
             ax01 = ax[0,1].imshow(self.E, origin='lower')
-            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1)
+            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1, levels=np.linspace(0.0, 50e8, 51*2))
             ax[0,1].set_title('electric field [V/m]')
             plt.colorbar(ax01)
             #
@@ -1807,12 +1807,12 @@ class SOLVER(GRID):
             #
             fig, ax = plt.subplots(2, 2, figsize=(10,8))
             ax00 = ax[0,0].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
-            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1)
+            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1, levels=np.linspace(-30.0, +30.0, 61*2))
             ax[0,0].set_title('electric potential  [V]')
             plt.colorbar(ax00)
             #
             ax01 = ax[0,1].imshow(self.E, origin='lower', cmap='coolwarm')
-            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1)
+            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1, levels=np.linspace(0.0, 50e8, 51*2))
             ax[0,1].set_title('electric field [V/m]')
             plt.colorbar(ax01)
             #
@@ -1884,12 +1884,12 @@ class SOLVER(GRID):
             #
             fig, ax = plt.subplots(2, 2, figsize=(10,8))
             ax00 = ax[0,0].imshow(self.V2, origin='lower')     # 'RdBu'
-            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1)
+            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1, levels=np.linspace(-30.0, +30.0, 61*2))
             ax[0,0].set_title('electric potential [V]')
             plt.colorbar(ax00)
             #
             ax01 = ax[0,1].imshow(self.E, origin='lower')
-            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1)
+            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1, levels=np.linspace(0.0, 50e8, 51*2))
             ax[0,1].set_title('electric field [V/m]')
             plt.colorbar(ax01)
             #
@@ -1914,12 +1914,12 @@ class SOLVER(GRID):
             #
             fig, ax = plt.subplots(2, 2, figsize=(10,8))
             ax00 = ax[0,0].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
-            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1)
+            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1, levels=np.linspace(-30.0, +30.0, 61*2))
             ax[0,0].set_title('electric potential [V]')
             plt.colorbar(ax00)
             #
             ax01 = ax[0,1].imshow(self.E, origin='lower', cmap='coolwarm')
-            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1)
+            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1, levels=np.linspace(0.0, 50e8, 51*2))
             ax[0,1].set_title('electric field [V/m]')
             plt.colorbar(ax01)
             #
@@ -2137,7 +2137,7 @@ cpu_time_5 = grid_solver.set_unit_cell_RZ_mis_region()
 cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
 cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
 cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, \
-                                                      doping=['n', 1e20], ct_doping=['n', [1e23, 1e20]])
+                                                      doping=['n', 1e20], ct_doping=['n', [1e24, 1e20]])
 cpu_time_9 = grid_solver.make_poisson_matrix()
 
 # FDM size
@@ -2309,10 +2309,10 @@ if True:
         sl_range       = np.linspace(info_sl[0],       info_sl[1],       range_div)
 
         # Gummel iteration parameter
-        gi_w_v = 0.98
-        gi_w_np = 0.98
+        gi_w_v = 0.99
+        gi_w_np = 0.99
         gi_error_v = 1e-4
-        gi_error_n = 1e22
+        gi_error_n = 1e23
 
         # timeline
         timeline_full = [1e-6]  # np.logspace(-10, -9, 11)
@@ -2370,6 +2370,8 @@ if True:
                     # mixing decoupled solutions from continuity equation solver
                     grid_solver.n1 = old_n1 * gi_w_np + grid_solver.n1 * ( 1.0 - gi_w_np )
                     grid_solver.p1 = old_p1 * gi_w_np + grid_solver.p1 * ( 1.0 - gi_w_np )
+                    #grid_solver.n1[ch_region_flag] = old_n1[ch_region_flag] * gi_w_np + grid_solver.n1[ch_region_flag] * ( 1.0 - gi_w_np )
+                    #grid_solver.p1[ch_region_flag] = old_p1[ch_region_flag] * gi_w_np + grid_solver.p1[ch_region_flag] * ( 1.0 - gi_w_np )
                     
                     # poission equation solver
                     grid_solver.solve_poisson_equation(model_type='MIS')
@@ -2445,3 +2447,4 @@ if True:
 
             # file output 2
             grid_solver.save_solutions(output_filename = output_filename)
+
