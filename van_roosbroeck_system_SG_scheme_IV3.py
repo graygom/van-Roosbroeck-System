@@ -471,16 +471,33 @@ class GRID:
                 print('set_semiconductor_parameters() > invalid dopant type')
 
         # contact doping profile (initialization)
-        cont_length = 20
-        grad_length = 15
-        ct_dopant_type = ct_doping[0]                                       # 'n' or 'p'
-        ct_dopant_density = ct_doping[1]                                    # [m]^-3
+        z_region_names = list(self.Z_stack.keys())
+        
+        bl_doping_const_thk = self.Z_stack[z_region_names[0]]['thk']
+        bl_doping_const_dz = self.Z_stack[z_region_names[0]]['dz']
+        bl_doping_grad_thk = self.Z_stack[z_region_names[1]]['thk']
+        bl_doping_grad_dz = self.Z_stack[z_region_names[1]]['dz']
+        bl_doping_const_length = int(bl_doping_const_thk/bl_doping_const_dz)
+        bl_doping_grad_length = int(bl_doping_const_length*0.5)
+        
+        sl_doping_const_thk = self.Z_stack[z_region_names[-1]]['thk']
+        sl_doping_const_dz = self.Z_stack[z_region_names[-1]]['dz']
+        sl_doping_grad_thk = self.Z_stack[z_region_names[-2]]['thk']
+        sl_doping_grad_dz = self.Z_stack[z_region_names[-2]]['dz']
+        sl_doping_const_length = int(sl_doping_const_thk/sl_doping_const_dz)
+        sl_doping_grad_length = int(sl_doping_const_length*0.5)
+            
+        cont_length = int( (bl_doping_const_length+sl_doping_const_length) / 2.0 )
+        grad_length = int( (bl_doping_grad_length+sl_doping_grad_length) / 2.0 )
+        
+        ct_dopant_type = ct_doping[0]                                                   # 'n' or 'p'
+        ct_dopant_density = ct_doping[1]                                                # [m]^-3
         ct_dopant_density_grad = np.logspace(np.log10(ct_dopant_density[0]), np.log10(ct_dopant_density[1]), grad_length)
         
         for each_point in (bl_sl_points):
             r_node, z_node = each_point
             
-            # dopant density constant region
+            # dopant density (constant region)
             for z_node_add in range(cont_length):
                 #
                 if (z_node == 0):
@@ -522,38 +539,29 @@ class GRID:
                     else:
                         print('set_semiconductor_parameters() > invalid dopant type, contact')
 
-        # debugging
-        if True:
-            #
-            z = range(self.Z_nodes_len)
-            r = range(self.R_nodes_len)
-            Z, R = np.meshgrid(z, r)
-            #
-            self.DP2 = self.DP.reshape(self.Z_nodes_len, self.R_nodes_len).T+1.0
-            self.RZ_MATno2 = np.where(self.RZ_MATno>=100, np.max(self.DP2), 1.0)
-            ax = plt.imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
-            plt.contour(Z, R, self.DP2, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*2))
-            plt.title('dopant density w/ electrodes [m^-3]')
-            plt.colorbar(ax)
-            plt.savefig('contact_doping_profile.pdf')
+        # 2D visualization
+        self.DP2 = self.DP.reshape(self.Z_nodes_len, self.R_nodes_len).T
+        self.RZ_MATno2 = np.where(self.RZ_MATno>=100, np.max(self.DP2), 1.0)
 
         # intrinsic carrier density (initialization)
         self.N_INT = np.zeros(self.RZ_nodes_len)
         for each_point in (tg_points+bl_sl_points):
             r_node, z_node = each_point
-            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)          # 1D array
+            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)          
             #
-            self.N_INT[index_r_z] = self.MAT['SI']['n_int']
+            self.N_INT[index_r_z] = self.MAT['SI']['n_int']                         # 1D array
 
         # free carrier density (initialization)
-        self.n1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) + self.DP ) / 2
-        self.p1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) - self.DP ) / 2
+        self.n1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) + self.DP ) / 2      # 1D array
+        self.p1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) - self.DP ) / 2      # 1D array
+        self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T             # 2D array
+        self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T             # 2D array
 
         # built-in potential (initialization)
         self.Vbi = np.where( self.N_INT != 0.0, \
                              self.Vtm * np.log( ( self.DP + np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) + 1.0 ) / ( 2.0*self.N_INT + 1.0 ) ), \
-                             0.0 )      # 1D array
-        self.Vbi2 = self.Vbi.reshape(self.Z_nodes_len, self.R_nodes_len).T
+                             0.0 )                                                  # 1D array
+        self.Vbi2 = self.Vbi.reshape(self.Z_nodes_len, self.R_nodes_len).T          # 2D array
 
         # coefficient of continuity equation matrix (initialization)
         self.CM = {}
@@ -1653,88 +1661,8 @@ class SOLVER(GRID):
         # CPU time
         return end-start
 
-    # ===== making N P matrix (steady state solution) =====
-    def make_N_P_matrix_steady_state(self):
-        # CPU time
-        start = time.time()
-        
-        # making sparse matrix (continuity equation)
-        self.dN = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
-        self.dP = sc.sparse.dok_matrix((self.RZ_nodes_len, self.RZ_nodes_len))
-
-        # sweep target points
-        for each_point in self.CM.keys():
-            # selected target point
-            each_r, each_z = each_point
-            tg_index = self.R_nodes_len * each_z + each_r
-            
-            # sweep neighbor points around selected target point
-            for neighbor_point in self.CM[each_point].keys():
-                # selected neighbor point
-                neighbor_index = self.CM[each_point][neighbor_point]['index']
-                n_CM_coeff = self.CM[each_point][neighbor_point]['n_CM_coeff']
-                p_CM_coeff = self.CM[each_point][neighbor_point]['p_CM_coeff']
-                
-                # r-1, z
-                if neighbor_point == 'rm1_z':   
-                    # change in electron density
-                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_f[ each_r-1, each_z+0 ]
-                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_b[ each_r-1, each_z+0 ]
-                    # change in hole density
-                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_b[ each_r-1, each_z+0 ]
-                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_f[ each_r-1, each_z+0 ]
-                    
-                # r+1, z
-                if neighbor_point == 'rp1_z':   
-                    # change in electron density
-                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Br_b[ each_r+0, each_z+0 ]
-                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Br_f[ each_r+0, each_z+0 ]
-                    # change in hole density
-                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Br_f[ each_r+0, each_z+0 ]
-                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Br_b[ each_r+0, each_z+0 ]
-                    
-                # r, z-1
-                if neighbor_point == 'r_zm1':   
-                    # change in electron density
-                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ]
-                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ]
-                    # change in hole density
-                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_b[ each_r+0, each_z-1 ]
-                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_f[ each_r+0, each_z-1 ]
-                    
-                # r, z+1
-                if neighbor_point == 'r_zp1':   
-                    # change in electron density
-                    self.dN[tg_index, tg_index      ] += +n_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ]
-                    self.dN[tg_index, neighbor_index] += -n_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ]
-                    # change in hole density
-                    self.dP[tg_index, tg_index      ] += +p_CM_coeff * self.Bz_f[ each_r+0, each_z+0 ]
-                    self.dP[tg_index, neighbor_index] += -p_CM_coeff * self.Bz_b[ each_r+0, each_z+0 ]
-
-        # sweep other points
-        for each_r in range(self.R_nodes_len):
-            for each_z in range(self.Z_nodes_len):
-                #
-                tg_index = self.R_nodes_len * each_z + each_r
-                #
-                if self.dN[tg_index, tg_index] == 0.0:
-                    self.dN[tg_index, tg_index] = 1.0
-                #
-                if self.dP[tg_index, tg_index] == 0.0:
-                    self.dP[tg_index, tg_index] = 1.0
-
-        # CSR format
-        self.dNcsr = self.dN.tocsr()
-        self.dPcsr = self.dP.tocsr()
-
-        # CPU time
-        end = time.time()
-
-        # CPU time
-        return end-start
-
     # ===== solving continuity equation  =====
-    def solve_continuity_equation(self, dt, output_filename=False):
+    def solve_continuity_equation(self, dt):
         # CPU time
         start = time.time()
 
@@ -1761,185 +1689,12 @@ class SOLVER(GRID):
         self.make_N_P_matrix(dt)
         
         # sparse matrix solver for continuity equation
-        self.n1 = sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 )
-        self.p1 = sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 )
+        self.n1 = np.abs( sc.sparse.linalg.spsolve(self.Ncsr + self.dNcsr, self.n1 ) )
+        self.p1 = np.abs( sc.sparse.linalg.spsolve(self.Pcsr + self.dPcsr, self.p1 ) )
 
         # 2D visualization 
         self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
         self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T
-        
-        # debugging
-        if output_filename != False:
-            #
-            z = range(self.Z_nodes_len)
-            r = range(self.R_nodes_len)
-            Z, R = np.meshgrid(z, r)
-            #
-            fig, ax = plt.subplots(2, 2, figsize=(10,8))
-            ax00 = ax[0,0].imshow(self.V2, origin='lower')     # 'RdBu'
-            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1, levels=np.linspace(-30.0, +30.0, 61*2))
-            ax[0,0].set_title('electric potential [V]')
-            plt.colorbar(ax00)
-            #
-            ax01 = ax[0,1].imshow(self.E, origin='lower')
-            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1, levels=np.linspace(0.0, 50e8, 51*2))
-            ax[0,1].set_title('electric field [V/m]')
-            plt.colorbar(ax01)
-            #
-            #ax10 = ax[1,0].imshow(np.log10(self.n2+1), origin='lower')
-            #ax[1,0].contour(Z, R, np.log10(self.n2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
-            ax10 = ax[1,0].imshow(self.n2, origin='lower')
-            ax[1,0].contour(Z, R, self.n2+10, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*1))
-            ax[1,0].set_title('electron density @channel [m^-3]')
-            plt.colorbar(ax10)
-            #
-            #ax11 = ax[1,1].imshow(np.log10(self.p2+1), origin='lower')
-            #ax[1,1].contour(Z, R, np.log10(self.p2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
-            ax11 = ax[1,1].imshow(self.p2, origin='lower')
-            ax[1,1].contour(Z, R, self.p2+10, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*1))
-            ax[1,1].set_title('hole density @channel [m^-3]')
-            plt.colorbar(ax11)
-            #
-            plt.savefig(output_filename+'_0.pdf')
-            #
-            plt.close()
-            
-            #
-            fig, ax = plt.subplots(2, 2, figsize=(10,8))
-            ax00 = ax[0,0].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
-            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1, levels=np.linspace(-30.0, +30.0, 61*2))
-            ax[0,0].set_title('electric potential  [V]')
-            plt.colorbar(ax00)
-            #
-            ax01 = ax[0,1].imshow(self.E, origin='lower', cmap='coolwarm')
-            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1, levels=np.linspace(0.0, 50e8, 51*2))
-            ax[0,1].set_title('electric field [V/m]')
-            plt.colorbar(ax01)
-            #
-            #ax10 = ax[1,0].imshow(np.log10(self.n2+1), origin='lower', cmap='coolwarm')
-            #ax[1,0].contour(Z, R, np.log10(self.n2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
-            ax10 = ax[1,0].imshow(self.n2, origin='lower', cmap='coolwarm')
-            ax[1,0].contour(Z, R, self.n2+10, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*1))
-            ax[1,0].set_title('electron density @channel [m^-3]')
-            plt.colorbar(ax10)
-            #
-            #ax11 = ax[1,1].imshow(np.log10(self.p2+1), origin='lower', cmap='coolwarm')
-            #ax[1,1].contour(Z, R, np.log10(self.p2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
-            ax11 = ax[1,1].imshow(self.p2, origin='lower', cmap='coolwarm')
-            ax[1,1].contour(Z, R, self.p2+10, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*1))
-            ax[1,1].set_title('hole density @channel [m^-3]')
-            plt.colorbar(ax11)
-            #
-            plt.savefig(output_filename+'_1.pdf')
-            #
-            plt.close()
-
-        # CPU time
-        end = time.time()
-
-        # CPU time
-        return end-start
-
-    # ===== solving continuity equation (steady state solution) =====
-    def solve_continuity_equation_steady_state(self, output_filename=False):
-        # CPU time
-        start = time.time()
-
-        # 2D visualization
-        self.V2 = self.V1.reshape(self.Z_nodes_len, self.R_nodes_len).T
-        self.Er = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.RZ_dR
-        self.Ez = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.RZ_dZ
-        self.E  = np.sqrt( self.Er[:,:-1]**2 + self.Ez[:-1,:]**2 )
-            
-        # post processing 1 (for continuity equations)
-        self.dVr_f = ( self.V2[1:,:] - self.V2[:-1,:] ) / self.Vtm
-        self.dVr_b = ( self.V2[:-1,:] - self.V2[1:,:] ) / self.Vtm
-        self.dVz_f = ( self.V2[:,1:] - self.V2[:,:-1] ) / self.Vtm
-        self.dVz_b = ( self.V2[:,:-1] - self.V2[:,1:] ) / self.Vtm
-
-        # post processing 2 (for continuity equations)
-        B_tol = 1e-10
-        self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f+1e-10) - 1.0 ), 1.0)
-        self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b+1e-10) - 1.0 ), 1.0)
-        self.Bz_f = np.where( np.abs(self.dVz_f) > B_tol, self.dVz_f / ( np.exp(self.dVz_f+1e-10) - 1.0 ), 1.0)
-        self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b+1e-10) - 1.0 ), 1.0)
-        
-        # updating N, P matrix for continuity equation
-        self.make_N_P_matrix_steady_state()
-        
-        # sparse matrix solver for continuity equation
-        self.n1 = sc.sparse.linalg.spsolve(self.dNcsr, self.n1 )
-        self.p1 = sc.sparse.linalg.spsolve(self.dPcsr, self.p1 )
-
-        # 2D visualization 
-        self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T
-        self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T
-        
-        # debugging
-        if output_filename != False:
-            #
-            z = range(self.Z_nodes_len)
-            r = range(self.R_nodes_len)
-            Z, R = np.meshgrid(z, r)
-            #
-            fig, ax = plt.subplots(2, 2, figsize=(10,8))
-            ax00 = ax[0,0].imshow(self.V2, origin='lower')     # 'RdBu'
-            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1, levels=np.linspace(-30.0, +30.0, 61*2))
-            ax[0,0].set_title('electric potential [V]')
-            plt.colorbar(ax00)
-            #
-            ax01 = ax[0,1].imshow(self.E, origin='lower')
-            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1, levels=np.linspace(0.0, 50e8, 51*2))
-            ax[0,1].set_title('electric field [V/m]')
-            plt.colorbar(ax01)
-            #
-            #ax10 = ax[1,0].imshow(np.log10(self.n2+1), origin='lower')
-            #ax[1,0].contour(Z, R, np.log10(self.n2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
-            ax10 = ax[1,0].imshow(self.n2, origin='lower')
-            ax[1,0].contour(Z, R, self.n2+10, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*1))
-            ax[1,0].set_title('electron density @channel [m^-3]')
-            plt.colorbar(ax10)
-            #
-            #ax11 = ax[1,1].imshow(np.log10(self.p2+1), origin='lower')
-            #ax[1,1].contour(Z, R, np.log10(self.p2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
-            ax11 = ax[1,1].imshow(self.p2, origin='lower')
-            ax[1,1].contour(Z, R, self.p2+10, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*1))
-            ax[1,1].set_title('hole density @channel [m^-3]')
-            plt.colorbar(ax11)
-            #
-            plt.savefig(output_filename+'_0.pdf')
-            #
-            plt.close()
-            
-            #
-            fig, ax = plt.subplots(2, 2, figsize=(10,8))
-            ax00 = ax[0,0].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
-            ax[0,0].contour(Z, R, self.V2, colors='k', linewidths=0.1, levels=np.linspace(-30.0, +30.0, 61*2))
-            ax[0,0].set_title('electric potential [V]')
-            plt.colorbar(ax00)
-            #
-            ax01 = ax[0,1].imshow(self.E, origin='lower', cmap='coolwarm')
-            ax[0,1].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.1, levels=np.linspace(0.0, 50e8, 51*2))
-            ax[0,1].set_title('electric field [V/m]')
-            plt.colorbar(ax01)
-            #
-            #ax10 = ax[1,0].imshow(np.log10(self.n2+1), origin='lower', cmap='coolwarm')
-            #ax[1,0].contour(Z, R, np.log10(self.n2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
-            ax10 = ax[1,0].imshow(self.n2, origin='lower', cmap='coolwarm')
-            ax[1,0].contour(Z, R, self.n2+10, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*1))
-            ax[1,0].set_title('electron density @channel [m^-3]')
-            plt.colorbar(ax10)
-            #
-            #ax11 = ax[1,1].imshow(np.log10(self.p2+1), origin='lower', cmap='coolwarm')
-            #ax[1,1].contour(Z, R, np.log10(self.p2+1), levels=np.arange(1.0, 26.1, 1.0), colors='k', linewidths=0.8)
-            ax11 = ax[1,1].imshow(self.p2, origin='lower', cmap='coolwarm')
-            ax[1,1].contour(Z, R, self.p2+10, colors='k', linewidths=0.1, levels=np.logspace(1.0, 27.0, 27*1))
-            ax[1,1].set_title('hole density @channel [m^-3]')
-            plt.colorbar(ax11)
-            #
-            plt.savefig(output_filename+'_1.pdf')
-            #
-            plt.close()
 
         # CPU time
         end = time.time()
@@ -1995,19 +1750,22 @@ class SOLVER(GRID):
         # return
         return [In_bl, Ip_bl, In_sl, Ip_sl]
 
-    # ===== save solutions =====
-    def save_solutions(self, output_filename):
+    # ===== save solutions (TXT file) =====
+    def save_SG_scheme_solutions_in_txt(self, output_filename):
+        # CPU time
+        start = time.time()
+        
         #
         fid_out = open(output_filename + '_sol.txt', 'w')
         
         #
-        header    = 'Identifier,R_index,Z_index,R,Z,EP,MATno,V,Er,Ez,E,FC,n,p,DP,Vbi' + '\n'
-        data_type = 'String,Integer,Integer,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real' + '\n'
+        header    = 'R_index,Z_index,R,Z,EP,MATno,V,Er,Ez,E,FC,n,p,DP,Vbi' + '\n'
+        data_type = 'Integer,Integer,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real,Real' + '\n'
         fid_out.write(header)
         fid_out.write(data_type)
         
         #
-        output_format = '%s,%i,%i,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e' + '\n'
+        output_format = '%i,%i,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e,%.3e' + '\n'
 
         for r_index in range(self.R_nodes_len):
             for z_index in range(self.Z_nodes_len):
@@ -2051,7 +1809,7 @@ class SOLVER(GRID):
                 builtin  = self.Vbi2[r_index, z_index]
 
                 #
-                output_values = [output_filename, r_index, z_index, r, z, ep, mat_no, \
+                output_values = [r_index, z_index, r, z, ep, mat_no, \
                                  poisson_v, poisson_er, poisson_ez, poisson_e, poisson_fc, \
                                  continuity_n, continuity_p, doping, builtin]
 
@@ -2060,14 +1818,106 @@ class SOLVER(GRID):
 
         #
         fid_out.close()
-        
 
-        
+        # CPU time
+        end = time.time()
+
+        # CPU time
+        return end-start
+
+    # ===== save solutions (PDF file) =====
+    def save_SG_scheme_solutions_in_pdf(self, output_filename):
+        # CPU time
+        start = time.time()
+
+        # meshgrid
+        z = range(self.Z_nodes_len)
+        r = range(self.R_nodes_len)
+        Z, R = np.meshgrid(z, r)
+            
+        # === CASE 0
+        fig, ax = plt.subplots(5, 1, figsize=(8,14))
+        # doping profile
+        ax0 = ax[0].imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower')
+        ax[0].contour(Z, R, self.DP2, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*2))
+        ax[0].set_title('dopant density w/ electrodes [m^-3]')
+        plt.colorbar(ax0)
+        # electric potential
+        ax1 = ax[1].imshow(self.V2, origin='lower')     # 'RdBu'
+        ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*8))
+        ax[1].set_title('electric potential [V]')
+        plt.colorbar(ax1)
+        # electric field
+        ax2 = ax[2].imshow(self.E, origin='lower')
+        ax[2].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.01, levels=np.linspace(0.0, 50e8, 51*4))
+        ax[2].set_title('electric field [V/m]')
+        plt.colorbar(ax2)
+        # electron density
+        ax3 = ax[3].imshow(np.log10(np.abs(self.n2)+1e-1), origin='lower')
+        ax[3].contour(Z, R, np.log10(np.abs(self.n2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
+        #ax3 = ax[3].imshow(self.n2, origin='lower')
+        #ax[3].contour(Z, R, self.n2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
+        ax[3].set_title('LOG10(electron density) @channel [m^-3]')
+        plt.colorbar(ax3)
+        # hole density
+        ax4 = ax[4].imshow(np.log10(np.abs(self.p2)+1e-1), origin='lower')
+        ax[4].contour(Z, R, np.log10(np.abs(self.p2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
+        #ax4 = ax[4].imshow(self.p2, origin='lower')
+        #ax[4].contour(Z, R, self.p2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
+        ax[4].set_title('LOG10(hole density) @channel [m^-3]')
+        plt.colorbar(ax4)
+        #
+        plt.savefig(output_filename+'_0.pdf')
+        #
+        plt.close()
+            
+        # === CASE 1
+        fig, ax = plt.subplots(5, 1, figsize=(8,14))
+        # doping profile
+        ax0 = ax[0].imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
+        ax[0].contour(Z, R, self.DP2, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*2))
+        ax[0].set_title('dopant density w/ electrodes [m^-3]')
+        plt.colorbar(ax0)
+        # electric potential
+        ax1 = ax[1].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
+        ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*8))
+        ax[1].set_title('electric potential  [V]')
+        plt.colorbar(ax1)
+        #
+        ax2 = ax[2].imshow(self.E, origin='lower', cmap='coolwarm')
+        ax[2].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.01, levels=np.linspace(0.0, 50e8, 51*4))
+        ax[2].set_title('electric field [V/m]')
+        plt.colorbar(ax2)
+        #
+        ax3 = ax[3].imshow(np.log10(np.abs(self.n2)+1e-1), origin='lower', cmap='coolwarm')
+        ax[3].contour(Z, R, np.log10(np.abs(self.n2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
+        #ax3 = ax[3].imshow(self.n2, origin='lower', cmap='coolwarm')
+        #ax[3].contour(Z, R, self.n2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
+        ax[3].set_title('LOG10(electron density) @channel [m^-3]')
+        plt.colorbar(ax3)
+        #
+        ax4 = ax[4].imshow(np.log10(np.abs(self.p2)+1e-1), origin='lower', cmap='coolwarm')
+        ax[4].contour(Z, R, np.log10(np.abs(self.p2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
+        #ax4 = ax[4].imshow(self.p2, origin='lower', cmap='coolwarm')
+        #ax[4].contour(Z, R, self.p2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
+        ax[4].set_title('LOG10(hole density) @channel [m^-3]')
+        plt.colorbar(ax4)
+        #
+        plt.savefig(output_filename+'_1.pdf')
+        #
+        plt.close()
+
+        # CPU time
+        end = time.time()
+
+        # CPU time
+        return end-start
 
 
-#
+
+#============================================================================
 # MAIN
-#
+#============================================================================
 
 # number of wls (USER INPUT)
 wl_ea = 3
@@ -2091,12 +1941,12 @@ for each_wl in range(wl_ea):
 # inside plug (USER INPUT)
 uc_inward_thk_dr = {}
 uc_inward_thk_dr['CD']         = 1200                                       # angstrom
-uc_inward_thk_dr['BOX_SIO2']   = {'mat_no':32, 'thk':70.0,  'dr':5.0}       # angstrom (1st layer)
-uc_inward_thk_dr['CTN']        = {'mat_no':31, 'thk':50.0,  'dr':5.0}       # angstrom (2nd layer)
-uc_inward_thk_dr['TOX']        = {'mat_no':30, 'thk':50.0,  'dr':5.0}       # angstrom (3rd layer)
-uc_inward_thk_dr['SI']         = {'mat_no':20, 'thk':70.0,  'dr':5.0}       # angstrom (4th layer)
-uc_inward_thk_dr['LINER']      = {'mat_no':11, 'thk':120.0, 'dr':5.0}       # angstrom (5th layer)
-uc_inward_thk_dr['VOID']       = {'mat_no':10, 'thk':-1,    'dr':5.0}       # angstrom (6th layer)
+uc_inward_thk_dr['BOX_SIO2']   = {'mat_no':32, 'thk':70.0,  'dr':10.0}       # angstrom (1st layer)
+uc_inward_thk_dr['CTN']        = {'mat_no':31, 'thk':50.0,  'dr':10.0}       # angstrom (2nd layer)
+uc_inward_thk_dr['TOX']        = {'mat_no':30, 'thk':50.0,  'dr':10.0}       # angstrom (3rd layer)
+uc_inward_thk_dr['SI']         = {'mat_no':20, 'thk':70.0,  'dr':10.0}       # angstrom (4th layer)
+uc_inward_thk_dr['LINER']      = {'mat_no':11, 'thk':120.0, 'dr':20.0}       # angstrom (5th layer)
+uc_inward_thk_dr['VOID']       = {'mat_no':10, 'thk':-1,    'dr':20.0}       # angstrom (6th layer)
 
 # outside plug & z stacks (USER INPUT)
 uc_outward_thk_dr = {}
@@ -2107,24 +1957,24 @@ for each_wl in range(wl_ea):
     each_wl_no   = 100 + each_wl
     #
     uc_outward_thk_dr[each_wl_name+'_ON_O1'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_O1']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
+    uc_outward_thk_dr[each_wl_name+'_ON_O1']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':10.0}     # angstrom (1st layer)
     uc_z_on_thk_dz[   each_wl_name+'_ON_O1'] = {'thk':80.0,  'dz':5.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_N1'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_N1']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
+    uc_outward_thk_dr[each_wl_name+'_ON_N1']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':10.0}     # angstrom (1st layer)
     uc_z_on_thk_dz[   each_wl_name+'_ON_N1'] = {'thk':30.0,  'dz':5.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_N2'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_N2']['BOX_AL2O3']  = {'mat_no':33,         'thk':30.0,  'dr':5.0}     # angstrom (1st layer)
-    uc_outward_thk_dr[each_wl_name+'_ON_N2'][each_wl_name] = {'mat_no':each_wl_no, 'thk':70.0,  'dr':5.0}     # angstrom (2nd layer)
+    uc_outward_thk_dr[each_wl_name+'_ON_N2']['BOX_AL2O3']  = {'mat_no':33,         'thk':30.0,  'dr':10.0}     # angstrom (1st layer)
+    uc_outward_thk_dr[each_wl_name+'_ON_N2'][each_wl_name] = {'mat_no':each_wl_no, 'thk':70.0,  'dr':10.0}     # angstrom (2nd layer)
     uc_z_on_thk_dz[   each_wl_name+'_ON_N2'] = {'thk':190.0, 'dz':5.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_N3'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_N3']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
+    uc_outward_thk_dr[each_wl_name+'_ON_N3']['BOX_AL2O3']  = {'mat_no':33,         'thk':100.0, 'dr':10.0}     # angstrom (1st layer)
     uc_z_on_thk_dz[   each_wl_name+'_ON_N3'] = {'thk':30.0,  'dz':5.0}   # angstrom
     #
     uc_outward_thk_dr[each_wl_name+'_ON_O2'] = {}
-    uc_outward_thk_dr[each_wl_name+'_ON_O2']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':5.0}     # angstrom (1st layer)
+    uc_outward_thk_dr[each_wl_name+'_ON_O2']['ON_SIO2']    = {'mat_no':34,         'thk':100.0, 'dr':10.0}     # angstrom (1st layer)
     uc_z_on_thk_dz[   each_wl_name+'_ON_O2'] = {'thk':80.0,  'dz':5.0}   # angstrom
 
 # preparing grid (USER INPUT)
@@ -2198,7 +2048,7 @@ if False:
 
         # CTM model 1D
         grid_solver.cal_ctn_trap_model_1d(dt=dt, tox_meff=0.5, mat_no_ch=20, mat_no_tox=30, mat_no_ctn=31, ctn_peak_pos=0.5, \
-                                          cnt_ccs_array=[1e-19, 1e-18, 1e-19], ctn_density_array=[1e25, 5e25, 1e25])
+                                          cnt_ccs_array=[1e-19, 1e-18, 1e-19], ctn_density_array=[2e25, 5e25, 2e25])
 
         # external bias
         wl_bias = 0.0
@@ -2290,8 +2140,11 @@ if True:
     wl_bias_sweep_info[1]['sl']       = [+0.0, +0.0]
 
     # external resistance
-    ext_R_bl = 2e4
-    ext_R_sl = 1e2
+    ext_R_bl = 0.0  # 2e4
+    ext_R_sl = 0.0  # 1e2
+
+    # terminal current
+    In_bl, Ip_bl, In_sl, Ip_sl = 0.0, 0.0, 0.0, 0.0
 
     # channel region flag
     ch_region_flag = np.where(grid_solver.CH_FLAG_serial==1.0)
@@ -2319,10 +2172,11 @@ if True:
         gi_error_n = 1e23
 
         # timeline
-        timeline_full = [1e-6]  # np.logspace(-10, -9, 11)
+        timeline_full = [1e-3]          # np.logspace(-10, -9, 11)
 
         # log
         cal_log = []
+        cal_civ = []
 
         # LOOP 2: WL bias sweep
         for each_div_index in range(range_div):
@@ -2333,8 +2187,10 @@ if True:
             # current time
             print('\n', time.ctime(), identifier)
 
-            # ext. bias
-            ext_bias = {10001:bl_range[each_div_index], 10002:sl_range[each_div_index]}             # BL, SL ext. bias
+            # ext. bias (initial)
+            ext_R_bl_drop, ext_R_sl_drop = In_bl * ext_R_bl, In_sl * ext_R_sl
+            ext_bias = {10001:bl_range[each_div_index] - ext_R_bl_drop,\
+                        10002:sl_range[each_div_index] + ext_R_sl_drop}             # BL, SL ext. bias
             for each_wl in range(wl_ea):
                 each_wl_mat_no = 100 + each_wl
                 if each_wl == int(wl_ea/2):
@@ -2348,6 +2204,9 @@ if True:
             # LOOP 3: time evolution
             output_filename = ''
             for each_time_index, each_time in enumerate(timeline_full):
+
+                # CPU time
+                start = time.time()
                 
                 # calculating dt
                 if each_time_index == 0:
@@ -2359,37 +2218,23 @@ if True:
                 grid_solver.solve_poisson_equation(model_type='MIS')
                     
                 # continuity equation solver
-                grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
-                #grid_solver.solve_continuity_equation_steady_state(output_filename=False)
+                grid_solver.solve_continuity_equation(dt=dt)
 
                 # calculate BL, SL terminal current
                 In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
 
-                # error check
+                # error check (start)
                 old_v1 = grid_solver.V1
                 old_n1 = grid_solver.n1
                 old_p1 = grid_solver.p1
 
-                # LOOP 4: Gummel iteration
+                # LOOP 4: Gummel iteration (for solution convergence)
                 error_v, error_n, error_p, gi_no = 1.0e40, 1.0e40, 1.0e40, 0
                 while error_n > gi_error_n:
-
-                    # ext. bias
-                    ext_R_bl_drop, ext_R_sl_drop = In_bl * ext_R_bl, In_sl * ext_R_sl
-                    ext_bias = {10001:bl_range[each_div_index] - ext_R_bl_drop,\
-                                10002:sl_range[each_div_index] + ext_R_sl_drop}             # BL, SL ext. bias
-                    for each_wl in range(wl_ea):
-                        each_wl_mat_no = 100 + each_wl
-                        if each_wl == int(wl_ea/2):
-                            ext_bias.update({each_wl_mat_no:sel_wl_range[each_div_index]})                  # sel WL ext. bias
-                        else:
-                            ext_bias.update({each_wl_mat_no:unsel_wl_range[each_div_index]})                # unsel WL ext. bias
 
                     # mixing decoupled solutions from continuity equation solver
                     grid_solver.n1 = old_n1 * gi_w_np + grid_solver.n1 * ( 1.0 - gi_w_np )
                     grid_solver.p1 = old_p1 * gi_w_np + grid_solver.p1 * ( 1.0 - gi_w_np )
-                    #grid_solver.n1[ch_region_flag] = old_n1[ch_region_flag] * gi_w_np + grid_solver.n1[ch_region_flag] * ( 1.0 - gi_w_np )
-                    #grid_solver.p1[ch_region_flag] = old_p1[ch_region_flag] * gi_w_np + grid_solver.p1[ch_region_flag] * ( 1.0 - gi_w_np )
                     
                     # poission equation solver
                     grid_solver.solve_poisson_equation(model_type='MIS')
@@ -2398,15 +2243,14 @@ if True:
                     grid_solver.V1 = old_v1 * gi_w_v + grid_solver.V1 * ( 1.0 - gi_w_v )
                     
                     # continuity equation solver
-                    grid_solver.solve_continuity_equation(dt=dt, output_filename=False)
-                    #grid_solver.solve_continuity_equation_steady_state(output_filename=False)
+                    grid_solver.solve_continuity_equation(dt=dt)
                     
                     # calculating error
                     error_v = np.max( np.abs( old_v1 - grid_solver.V1 ) )
                     error_n = np.max( np.abs( old_n1 - grid_solver.n1 ) )
                     error_p = np.max( np.abs( old_p1 - grid_solver.p1 ) )
                     
-                    # error check
+                    # error check (Gummel iteration loop)
                     old_v1 = grid_solver.V1
                     old_n1 = grid_solver.n1
                     old_p1 = grid_solver.p1
@@ -2424,45 +2268,52 @@ if True:
                                      In_bl, Ip_bl, In_sl, Ip_sl]
                     cal_log.append(output_value)
 
-                    # debugging
+                    # debugging (for every 100 Gummel iteration loop count)
                     if gi_no % 100 == 0:
                         print(output_format % tuple(output_value))
-                        print('%.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e' % \
-                              (np.max(grid_solver.n2[:,0]),np.max(grid_solver.n1[ch_region_flag]),np.max(grid_solver.n2[:,-1]),\
-                               np.max(grid_solver.p2[:,0]),np.max(grid_solver.p1[ch_region_flag]),np.max(grid_solver.p2[:,-1]),\
-                               error_v, error_n, error_p, ext_R_bl_drop, ext_R_sl_drop))
 
-                    # Gummel loop count
+                    # update Gummel iteration loop count
                     gi_no += 1
 
+                # CPU time
+                end = time.time()
+                cpu_time_31 = end - start
+                
             # output filename
             output_filename = '%iWL_SG_scheme_Gummel_iter_%.3f_%.3f_%.3f_%.3f_elapsed_time_%i_%.3e_dt_%.3e_w_%.4f_%.4f_%i' % \
                               (wl_ea, sel_wl_range[each_div_index], unsel_wl_range[each_div_index], \
                                bl_range[each_div_index], sl_range[each_div_index], each_time_index, each_time, dt, gi_w_v, gi_w_np, gi_no)
 
-            # poission equation solver
-            grid_solver.solve_poisson_equation(model_type='MIS')
-                    
-            # continuity equation solver
-            grid_solver.solve_continuity_equation(dt=dt, output_filename=output_filename)
-            #grid_solver.solve_continuity_equation_steady_state(output_filename=output_filename)
-
-            # debugging
-            print(('  ' + output_format) % tuple(output_value))
-            print('    %.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e' % \
+            # debugging (for last Gummel iteration loop count)
+            print(output_format % tuple(output_value))
+            print('%.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e,%.2e, %.2e,%.2e' % \
                    (np.max(grid_solver.n2[:,0]),np.max(grid_solver.n1[ch_region_flag]),np.max(grid_solver.n2[:,-1]),\
                     np.max(grid_solver.p2[:,0]),np.max(grid_solver.p1[ch_region_flag]),np.max(grid_solver.p2[:,-1]),\
                     error_v, error_n, error_p, ext_R_bl_drop, ext_R_sl_drop))
 
-            # file output 1
-            fid_out = open(output_filename + '.txt', 'w')
-            fid_out.write('IDENTIFIER,WLs,LOOP_C,LOOP_V,SEL_WL_V,UNSEL_WL_V,BL_V,SL_V,GUMMEL_ITER,LOOP_T,GUMMEL_W_V,GUMMEL_W_NP,TIME,TIME_dt,' + \
-                          'ERROR_V,ERROR_N,ERROR_P,In_BL,Ip_BL,In_SL,Ip_SL' + '\n')
-            output_format = '%s,%i,%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.4f,%.4f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e' + '\n'
-            for each_line_data in cal_log:
-                fid_out.write(output_format % tuple([identifier, wl_ea] + each_line_data))
-            fid_out.close()
+            # file output 1 (every bias change conditions)
+            cpu_time_41 = grid_solver.save_SG_scheme_solutions_in_txt(output_filename = output_filename)
+            cpu_time_42 = grid_solver.save_SG_scheme_solutions_in_pdf(output_filename = output_filename)
+            print('Gummel iter = %iea, %.3f sec, file output = %.1e sec (txt), %.1e sec (pdf)' % (gi_no, cpu_time_31, cpu_time_41, cpu_time_42))
 
-            # file output 2
-            grid_solver.save_solutions(output_filename = output_filename)
+            # CIV output (collecting data)
+            cal_civ.append([wl_ea, \
+                            sel_wl_range[each_div_index], unsel_wl_range[each_div_index], \
+                            bl_range[each_div_index], sl_range[each_div_index], \
+                            In_bl, Ip_bl, In_sl, Ip_sl])
+
+        # file output 2 (final resulats)
+        fid_out = open(output_filename + '.txt', 'w')
+        fid_out.write('IDENTIFIER,WLs,LOOP_C,LOOP_V,SEL_WL_V,UNSEL_WL_V,BL_V,SL_V,GUMMEL_ITER,LOOP_T,GUMMEL_W_V,GUMMEL_W_NP,TIME,TIME_dt,' + \
+                      'ERROR_V,ERROR_N,ERROR_P,In_BL,Ip_BL,In_SL,Ip_SL' + '\n')
+        output_format = '%s,%i,%i,%i,%.2f,%.2f,%.2f,%.2f,%i,%i,%.4f,%.4f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e' + '\n'
+        for each_line_data in cal_log:
+            fid_out.write(output_format % tuple([identifier, wl_ea] + each_line_data))
+        fid_out.close()
+
+        # CIV output (console output)
+        civ_output_format = '%i,%.3f,%.3f,%.3f,%.3f,%.3e,%.3e,%.3e,%.3e'
+        for each_cal_civ in cal_civ:
+            print(civ_output_format % tuple(each_cal_civ))
+
 
