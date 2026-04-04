@@ -1921,12 +1921,12 @@ class SOLVER(GRID):
 
 # z geometry split (USER INPUT)
 z_geo_split = {}
-z_geo_split[0] = [5, 80.0, 30.0, 190.0, 30.0, 80.0]     # 160_250_410
-z_geo_split[1] = [5, 85.0, 30.0, 190.0, 30.0, 80.0]     # 165_250_415
-z_geo_split[2] = [5, 80.0, 30.0, 195.0, 30.0, 80.0]     # 160_255_415
-z_geo_split[3] = [5, 85.0, 30.0, 190.0, 30.0, 85.0]     # 170_250_420
-z_geo_split[4] = [5, 85.0, 30.0, 195.0, 30.0, 80.0]     # 165_255_420
-z_geo_split[5] = [5, 80.0, 30.0, 200.0, 30.0, 80.0]     # 160_260_420
+z_geo_split[0] = [5, 100.0, 30.0, 320.0, 30.0, 100.0]   # 200_380_580
+z_geo_split[1] = [5, 105.0, 30.0, 310.0, 30.0, 105.0]   # 210_370_580
+z_geo_split[2] = [5, 110.0, 30.0, 300.0, 30.0, 110.0]   # 220_360_580
+z_geo_split[3] = [5, 100.0, 30.0, 330.0, 30.0, 100.0]   # 200_390_590
+z_geo_split[4] = [5, 105.0, 30.0, 320.0, 30.0, 105.0]   # 210_380_590
+z_geo_split[5] = [5, 110.0, 30.0, 310.0, 30.0, 110.0]   # 220_370_590
 
 # z geometry split
 for each_z_geo_split_no in z_geo_split.keys():
@@ -2198,10 +2198,10 @@ for each_z_geo_split_no in z_geo_split.keys():
             sl_range            = np.linspace(info_sl[0],            info_sl[1],            range_div)
 
             # Gummel iteration parameter
-            gi_w_v = 0.99
-            gi_w_np = 0.99
+            gi_w_v = 0.99           # GI convergence control parameter
+            gi_w_np = 0.99          # GI convergence control parameter
             gi_error_v = 1e-4
-            gi_error_n = 1e23
+            gi_error_n = 1e22       # GI convergence control parameter
 
             # timeline
             timeline_full = [1e-3]          # np.logspace(-10, -9, 11)
