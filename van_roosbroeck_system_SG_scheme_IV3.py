@@ -1838,29 +1838,29 @@ class SOLVER(GRID):
         # === CASE 0
         fig, ax = plt.subplots(5, 1, figsize=(8,14))
         # doping profile
-        ax0 = ax[0].imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower')
+        ax0 = ax[0].imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
         ax[0].contour(Z, R, self.DP2, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*2))
         ax[0].set_title('dopant density w/ electrodes [m^-3]')
         plt.colorbar(ax0)
         # electric potential
-        ax1 = ax[1].imshow(self.V2, origin='lower')     # 'RdBu'
+        ax1 = ax[1].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
         ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*8))
         ax[1].set_title('electric potential [V]')
         plt.colorbar(ax1)
         # electric field
-        ax2 = ax[2].imshow(self.E, origin='lower')
+        ax2 = ax[2].imshow(self.E, origin='lower', cmap='coolwarm')
         ax[2].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.01, levels=np.linspace(0.0, 50e8, 51*4))
         ax[2].set_title('electric field [V/m]')
         plt.colorbar(ax2)
         # electron density
-        ax3 = ax[3].imshow(np.log10(np.abs(self.n2)+1e-1), origin='lower')
+        ax3 = ax[3].imshow(np.log10(np.abs(self.n2)+1e-1), origin='lower', cmap='coolwarm')
         ax[3].contour(Z, R, np.log10(np.abs(self.n2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
         #ax3 = ax[3].imshow(self.n2, origin='lower')
         #ax[3].contour(Z, R, self.n2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
         ax[3].set_title('LOG10(electron density) @channel [m^-3]')
         plt.colorbar(ax3)
         # hole density
-        ax4 = ax[4].imshow(np.log10(np.abs(self.p2)+1e-1), origin='lower')
+        ax4 = ax[4].imshow(np.log10(np.abs(self.p2)+1e-1), origin='lower', cmap='coolwarm')
         ax[4].contour(Z, R, np.log10(np.abs(self.p2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
         #ax4 = ax[4].imshow(self.p2, origin='lower')
         #ax[4].contour(Z, R, self.p2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
@@ -1889,18 +1889,18 @@ class SOLVER(GRID):
         ax[2].set_title('electric field [V/m]')
         plt.colorbar(ax2)
         #
-        ax3 = ax[3].imshow(np.log10(np.abs(self.n2)+1e-1), origin='lower', cmap='coolwarm')
-        ax[3].contour(Z, R, np.log10(np.abs(self.n2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
-        #ax3 = ax[3].imshow(self.n2, origin='lower', cmap='coolwarm')
-        #ax[3].contour(Z, R, self.n2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
-        ax[3].set_title('LOG10(electron density) @channel [m^-3]')
+        #ax3 = ax[3].imshow(np.log10(np.abs(self.n2)+1e-1), origin='lower', cmap='coolwarm')
+        #ax[3].contour(Z, R, np.log10(np.abs(self.n2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
+        ax3 = ax[3].imshow(self.n2, origin='lower', cmap='coolwarm')
+        ax[3].contour(Z, R, self.n2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
+        ax[3].set_title('electron density @channel [m^-3]')
         plt.colorbar(ax3)
         #
-        ax4 = ax[4].imshow(np.log10(np.abs(self.p2)+1e-1), origin='lower', cmap='coolwarm')
-        ax[4].contour(Z, R, np.log10(np.abs(self.p2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
-        #ax4 = ax[4].imshow(self.p2, origin='lower', cmap='coolwarm')
-        #ax[4].contour(Z, R, self.p2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
-        ax[4].set_title('LOG10(hole density) @channel [m^-3]')
+        #ax4 = ax[4].imshow(np.log10(np.abs(self.p2)+1e-1), origin='lower', cmap='coolwarm')
+        #ax[4].contour(Z, R, np.log10(np.abs(self.p2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
+        ax4 = ax[4].imshow(self.p2, origin='lower', cmap='coolwarm')
+        ax[4].contour(Z, R, self.p2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
+        ax[4].set_title('hole density @channel [m^-3]')
         plt.colorbar(ax4)
         #
         plt.savefig(output_filename+'_1.pdf')
@@ -1920,7 +1920,7 @@ class SOLVER(GRID):
 #============================================================================
 
 # number of wls (USER INPUT)
-wl_ea = 3
+wl_ea = 5
 
 # material para (USER INPUT)
 mat_para_dictionary = {}
@@ -1946,7 +1946,7 @@ uc_inward_thk_dr['CTN']        = {'mat_no':31, 'thk':50.0,  'dr':10.0}       # a
 uc_inward_thk_dr['TOX']        = {'mat_no':30, 'thk':50.0,  'dr':10.0}       # angstrom (3rd layer)
 uc_inward_thk_dr['SI']         = {'mat_no':20, 'thk':70.0,  'dr':10.0}       # angstrom (4th layer)
 uc_inward_thk_dr['LINER']      = {'mat_no':11, 'thk':120.0, 'dr':20.0}       # angstrom (5th layer)
-uc_inward_thk_dr['VOID']       = {'mat_no':10, 'thk':-1,    'dr':20.0}       # angstrom (6th layer)
+uc_inward_thk_dr['VOID']       = {'mat_no':10, 'thk':-1,    'dr':40.0}       # angstrom (6th layer)
 
 # outside plug & z stacks (USER INPUT)
 uc_outward_thk_dr = {}
@@ -2294,7 +2294,7 @@ if True:
             # file output 1 (every bias change conditions)
             cpu_time_41 = grid_solver.save_SG_scheme_solutions_in_txt(output_filename = output_filename)
             cpu_time_42 = grid_solver.save_SG_scheme_solutions_in_pdf(output_filename = output_filename)
-            print('Gummel iter = %iea, %.3f sec, file output = %.1e sec (txt), %.1e sec (pdf)' % (gi_no, cpu_time_31, cpu_time_41, cpu_time_42))
+            print('Gummel iter = %iea, %.3f sec, file output = %.3f sec (txt), %.3f sec (pdf)' % (gi_no, cpu_time_31, cpu_time_41, cpu_time_42))
 
             # CIV output (collecting data)
             cal_civ.append([wl_ea, \
