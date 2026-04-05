@@ -457,7 +457,7 @@ class GRID:
             self.CH_FLAG_serial[index_r_z] = 1.0
 
         # doping profile (initialization)
-        self.DP = np.zeros(self.RZ_nodes_len)                               # 1D array
+        self.DP = 1e-4*np.ones(self.RZ_nodes_len)                               # 1D array
         dopant_type = doping[0]                                             # 'n' or 'p'
         dopant_density = doping[1]                                          # [m]^-3
         for each_point in (tg_points + bl_sl_points):
@@ -487,8 +487,8 @@ class GRID:
         sl_doping_const_length = int(sl_doping_const_thk/sl_doping_const_dz)
         sl_doping_grad_length = int(sl_doping_const_length*0.5)
             
-        cont_length = int( (bl_doping_const_length+sl_doping_const_length) / 2.0 )
-        grad_length = int( (bl_doping_grad_length+sl_doping_grad_length) / 2.0 )
+        cont_length = int( bl_doping_const_length * 1.5 )
+        grad_length = int( bl_doping_grad_length * 1.5 )
         
         ct_dopant_type = ct_doping[0]                                                   # 'n' or 'p'
         ct_dopant_density = ct_doping[1]                                                # [m]^-3
@@ -539,12 +539,24 @@ class GRID:
                     else:
                         print('set_semiconductor_parameters() > invalid dopant type, contact')
 
-        # 2D visualization
+        # 2D visualization (doping)
         self.DP2 = self.DP.reshape(self.Z_nodes_len, self.R_nodes_len).T
         self.RZ_MATno2 = np.where(self.RZ_MATno>=100, np.max(self.DP2), 1.0)
 
+        z = range(self.Z_nodes_len)
+        r = range(self.R_nodes_len)
+        Z, R = np.meshgrid(z, r)
+
+        fig, ax = plt.subplots(1, 1, figsize=(20,5)) 
+        ax0 = plt.imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
+        plt.contour(Z, R, self.DP2, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*2))
+        plt.title('dopant density w/ electrodes [m^-3]')
+        plt.colorbar(ax0)
+        plt.savefig('doping.pdf')
+        plt.close()
+
         # intrinsic carrier density (initialization)
-        self.N_INT = np.zeros(self.RZ_nodes_len)
+        self.N_INT = np.ones(self.RZ_nodes_len)
         for each_point in (tg_points+bl_sl_points):
             r_node, z_node = each_point
             index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)          
@@ -1844,7 +1856,7 @@ class SOLVER(GRID):
         plt.colorbar(ax0)
         # electric potential
         ax1 = ax[1].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
-        ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*4))
+        ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*2))
         ax[1].set_title('electric potential [V]')
         plt.colorbar(ax1)
         # electric field
@@ -1880,7 +1892,7 @@ class SOLVER(GRID):
         plt.colorbar(ax0)
         # electric potential
         ax1 = ax[1].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
-        ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*4))
+        ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*2))
         ax[1].set_title('electric potential  [V]')
         plt.colorbar(ax1)
         #
@@ -2001,7 +2013,7 @@ for each_z_geo_split_no in z_geo_split.keys():
     cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
     cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
     cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, \
-                                                          doping=['n', 1e20], ct_doping=['n', [1e24, 1e20]])
+                                                          doping=['n', 1e20], ct_doping=['n', [5e24, 1e20]])
     cpu_time_9 = grid_solver.make_poisson_matrix()
 
     # FDM size
@@ -2062,7 +2074,7 @@ for each_z_geo_split_no in z_geo_split.keys():
 
             # CTM model 1D
             grid_solver.cal_ctn_trap_model_1d(dt=dt, tox_meff=0.5, mat_no_ch=20, mat_no_tox=30, mat_no_ctn=31, ctn_peak_pos=0.5, \
-                                              cnt_ccs_array=[1e-19, 1e-18, 1e-19], ctn_density_array=[2e25, 5e25, 2e25])
+                                              cnt_ccs_array=[1e-19, 1e-18, 1e-19], ctn_density_array=[5e25, 5e25, 5e25])
 
             # external bias
             wl_bias = 0.0
@@ -2139,20 +2151,35 @@ for each_z_geo_split_no in z_geo_split.keys():
                      (cd, ponoa_ch, ponoa_tox, ponoa_ctn, ponoa_box, ponoa_alo, on_o, on_n, on_pitch)
 
         # WL bias sweep info
-        array_div = [1, 120+1, 120+1, 10+1, 120+1, 20+1, 120+1, 10+1, 120+1, 10+1, 120+1, \
-                     30+1, 120+1, 10+1, 120+1, 10+1, 120+1, 30+1, 120+1, 10+1, 120+1, 10+1, 120+1, 10+1, 120+1]
-        array_sel_wl = [-5.0, -5.0, -5.0, +7.0, +7.0, -5.0, -5.0, +7.0, +7.0, -5.0, -5.0, +7.0, \
-                        +7.0, -5.0, -5.0, +7.0, +7.0, -5.0, -5.0, +7.0, +7.0, -5.0, -5.0, +7.0, +7.0, -5.0]
-        array_sel_adj_wl_bl_side = [-5.0, -5.0, +7.0, +7.0, +8.0, +8.0, +6.0, +6.0, +5.0, +5.0, +4.0, +4.0, \
-                                    +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +4.0, +4.0, +5.0, +5.0, +6.0, +6.0, +7.0, -5.0]
-        array_sel_adj_wl_sl_side = [-5.0, -5.0, +7.0, +7.0, +8.0, +8.0, +6.0, +6.0, +5.0, +5.0, +4.0, +4.0, \
-                                    +4.0, +4.0, +5.0, +5.0, +6.0, +6.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, -5.0]
-        array_unsel_wl = [-5.0, -5.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, \
-                          +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, -5.0]
-        array_bl = [0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, \
-                    0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
-        array_sl = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, \
-                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]     
+        array_div = [1, 120+1, 120+1, \
+                     20+1, 120+1, 10+1, 120+1, 10+1, 120+1, \
+                     30+1, 120+1, 10+1, 120+1, 10+1, 120+1, 30+1, 120+1, \
+                     10+1, 120+1, 10+1, 120+1]
+        array_sel_wl = [-5.0, -5.0, -5.0, +7.0, \
+                        +7.0, -5.0, -5.0, +7.0, +7.0, -5.0, \
+                        -5.0, +7.0, +7.0, -5.0, -5.0, +7.0, +7.0, -5.0, \
+                        -5.0, +7.0, +7.0, -5.0]
+        array_sel_adj_wl_bl_side = [-5.0, -5.0, +7.0, +7.0, \
+                                    +6.0, +6.0, +5.0, +5.0, +4.0, +4.0, \
+                                    +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +4.0, +4.0, \
+                                    +5.0, +5.0, +6.0, +6.0]
+        array_sel_adj_wl_sl_side = [-5.0, -5.0, +7.0, +7.0, \
+                                    +6.0, +6.0, +5.0, +5.0, +4.0, +4.0, \
+                                    +4.0, +4.0, +5.0, +5.0, +6.0, +6.0, +7.0, +7.0, \
+                                    +7.0, +7.0, +7.0, +7.0]
+        array_unsel_wl = [-5.0, -5.0, +7.0, +7.0, \
+                          +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, \
+                          +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, +7.0, \
+                          +7.0, +7.0, +7.0, +7.0]
+        array_bl = [0.0, 0.0, 0.5, 0.5, \
+                    0.5, 0.5, 0.5, 0.5, 0.5, 0.5, \
+                    0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, \
+                    0.5, 0.5, 0.5, 0.5]
+        array_sl = [0.0, 0.0, 0.0, 0.0, \
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, \
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, \
+                    0.0, 0.0, 0.0, 0.0]
+        
         wl_bias_sweep_info = {}
         for each_loop_no in range(len(array_div)):
             wl_bias_sweep_info[each_loop_no] = {}
@@ -2197,14 +2224,14 @@ for each_z_geo_split_no in z_geo_split.keys():
             bl_range            = np.linspace(info_bl[0],            info_bl[1],            range_div)
             sl_range            = np.linspace(info_sl[0],            info_sl[1],            range_div)
 
-            # Gummel iteration parameter
-            gi_w_v = 0.99           # GI convergence control parameter
-            gi_w_np = 0.99          # GI convergence control parameter
-            gi_error_v = 1e-4
-            gi_error_n = 1e22       # GI convergence control parameter
+            # Gummel iteration (GI) parameter
+            gi_w_v = 0.991                      # GI convergence control parameter (>0.99)
+            gi_w_np = 0.991                     # GI convergence control parameter (>0.99)
+            gi_error_v = 6e-5                   # GI convergence control parameter  
+            gi_error_n = 1e23                   # GI convergence control parameter (<1e23)
 
             # timeline
-            timeline_full = [1e-3]          # np.logspace(-10, -9, 11)
+            timeline_full = [1e-8]              # GI convergence control parameter (current LKG level < 1E-12A as dt > 1e-8 sec)
 
             # log
             cal_log = []
@@ -2275,13 +2302,18 @@ for each_z_geo_split_no in z_geo_split.keys():
                     # continuity equation solver
                     grid_solver.solve_continuity_equation(dt=dt)
 
-                    # calculate BL, SL terminal current
-                    In_bl, Ip_bl, In_sl, Ip_sl = grid_solver.cal_bl_sl_current(bl_mat_no=10001, sl_mat_no=10002)
+                    # calculating error (first error check)
+                    error_v = np.max( np.abs( old_v1 - grid_solver.V1 ) )
+                    error_n = np.max( np.abs( old_n1 - grid_solver.n1 ) )
+                    error_p = np.max( np.abs( old_p1 - grid_solver.p1 ) )
 
                     # error check (start)
                     old_v1 = grid_solver.V1
                     old_n1 = grid_solver.n1
                     old_p1 = grid_solver.p1
+
+                    # debugging (convergence error check)
+                    print('error check %.3e,%.3e,%.3e  ,%.3e (%.2f%%)' % (error_v, error_n, error_p, gi_error_n, error_n/gi_error_n*100))
 
                     # LOOP 4: Gummel iteration (for solution convergence)
                     error_v, error_n, error_p, gi_no = 1.0e40, 1.0e40, 1.0e40, 0
@@ -2319,7 +2351,7 @@ for each_z_geo_split_no in z_geo_split.keys():
                                          sel_wl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], \
                                          unsel_wl_range[each_div_index], bl_range[each_div_index], sl_range[each_div_index], \
                                          gi_no, each_time_index, gi_w_v, gi_w_np, each_time, dt, \
-                                         error_v, error_n, error_p, \
+                                         error_v, error_n, error_p,\
                                          In_bl, Ip_bl, In_sl, Ip_sl]
                         cal_log.append(output_value)
 
@@ -2349,7 +2381,7 @@ for each_z_geo_split_no in z_geo_split.keys():
                         error_v, error_n, error_p, ext_R_bl_drop, ext_R_sl_drop))
 
                 # file output 1 (every bias change conditions)
-                if ( np.abs(In_bl) > 10e-9 ) and ( np.abs(In_bl) < 100e-9 ): 
+                if ( np.abs(In_bl) > 10e-9 ) and ( np.abs(In_bl) < 100e-9 ) and ( In_bl > 0) and ( In_sl > 0): 
                     cpu_time_41 = grid_solver.save_SG_scheme_solutions_in_txt(output_filename = output_filename)
                     cpu_time_42 = grid_solver.save_SG_scheme_solutions_in_pdf(output_filename = output_filename)
                     print('Gummel iter = %iea, %.3f sec, file output = %.3f sec (txt), %.3f sec (pdf)' % (gi_no, cpu_time_31, cpu_time_41, cpu_time_42))
@@ -2378,5 +2410,6 @@ for each_z_geo_split_no in z_geo_split.keys():
             for each_cal_civ in cal_civ:
                 fid_out.write( civ_output_format % tuple(each_cal_civ) )
             fid_out.close()
+
 
       
