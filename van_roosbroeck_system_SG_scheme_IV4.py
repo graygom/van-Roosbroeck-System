@@ -621,7 +621,7 @@ class GRID:
         fig, ax = plt.subplots(2, 1, figsize=(15,7))
    
         ax0 = ax[0].imshow(self.RZ_MATno3, origin='lower', cmap='gray')
-        ax[0].set_title('vRB_SG_GI_w991_on_580_rev03_20260412.py 13 w/ RZ nodes = [R %iea, Z %iea], total nodes = %iea' % \
+        ax[0].set_title('materials mod 13 w/ RZ nodes = [R %iea, Z %iea], total nodes = %iea' % \
                         (self.R_nodes_len, self.Z_nodes_len, self.RZ_nodes_len))
         plt.colorbar(ax0)
         
@@ -1842,10 +1842,10 @@ class SOLVER(GRID):
         if True:
             # Scharffer Gummel scheme
             B_tol = 1e-10   
-            self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f) - 1.0 + 1e-12), 1.0)
-            self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b) - 1.0 + 1e-12), 1.0)
-            self.Bz_f = np.where( np.abs(self.dVz_f) > B_tol, self.dVz_f / ( np.exp(self.dVz_f) - 1.0 + 1e-12), 1.0)
-            self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b) - 1.0 + 1e-12), 1.0)
+            self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f) - 1.0 + 1e-13), 1.0)
+            self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b) - 1.0 + 1e-13), 1.0)
+            self.Bz_f = np.where( np.abs(self.dVz_f) > B_tol, self.dVz_f / ( np.exp(self.dVz_f) - 1.0 + 1e-13), 1.0)
+            self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b) - 1.0 + 1e-13), 1.0)
 
         if False:
             # Slotboom scheme
@@ -2403,8 +2403,8 @@ for each_z_geo_split_no in z_geo_split.keys():
             sl_range            = np.linspace(info_sl[0],            info_sl[1],            range_div)
 
             # Gummel iteration (GI) parameter
-            gi_w_v = 0.992                      # GI convergence control parameter (>0.99)
-            gi_w_np = 0.992                     # GI convergence control parameter (>0.99)
+            gi_w_v = 0.985                      # GI convergence control parameter (>0.99)
+            gi_w_np = 0.985                     # GI convergence control parameter (>0.99)
             gi_error_v = 6e-5                   # GI convergence control parameter  
             gi_error_n = 1e23                   # GI convergence control parameter (<1e23)
 
@@ -2588,6 +2588,8 @@ for each_z_geo_split_no in z_geo_split.keys():
             for each_cal_civ in cal_civ:
                 fid_out.write( civ_output_format % tuple(each_cal_civ) )
             fid_out.close()
+
+                
 
                 
       
