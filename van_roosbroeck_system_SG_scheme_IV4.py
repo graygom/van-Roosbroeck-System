@@ -2403,8 +2403,8 @@ for each_z_geo_split_no in z_geo_split.keys():
             sl_range            = np.linspace(info_sl[0],            info_sl[1],            range_div)
 
             # Gummel iteration (GI) parameter
-            gi_w_v = 0.985                      # GI convergence control parameter (>0.99)
-            gi_w_np = 0.985                     # GI convergence control parameter (>0.99)
+            gi_w_v = 0.993                      # GI convergence control parameter (>0.99)
+            gi_w_np = 0.993                     # GI convergence control parameter (>0.99)
             gi_error_v = 6e-5                   # GI convergence control parameter  
             gi_error_n = 1e23                   # GI convergence control parameter (<1e23)
 
