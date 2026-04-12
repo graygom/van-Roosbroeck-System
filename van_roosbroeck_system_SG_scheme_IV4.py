@@ -619,9 +619,10 @@ class GRID:
         Z, R = np.meshgrid(z, r)                # for contour map
 
         fig, ax = plt.subplots(2, 1, figsize=(15,7))
-        
+   
         ax0 = ax[0].imshow(self.RZ_MATno3, origin='lower', cmap='gray')
-        ax[0].set_title('material no % 13')
+        ax[0].set_title('vRB_SG_GI_w991_on_580_rev03_20260412.py 13 w/ RZ nodes = [R %iea, Z %iea], total nodes = %iea' % \
+                        (self.R_nodes_len, self.Z_nodes_len, self.RZ_nodes_len))
         plt.colorbar(ax0)
         
         ax1 = ax[1].imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
@@ -1838,12 +1839,21 @@ class SOLVER(GRID):
         self.dVz_b = ( self.V2[:,:-1] - self.V2[:,1:] ) / self.Vtm
 
         # post processing 2 (for continuity equations)
-        B_tol = 1e-10
-        self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f+1e-10) - 1.0 ), 1.0)
-        self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b+1e-10) - 1.0 ), 1.0)
-        self.Bz_f = np.where( np.abs(self.dVz_f) > B_tol, self.dVz_f / ( np.exp(self.dVz_f+1e-10) - 1.0 ), 1.0)
-        self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b+1e-10) - 1.0 ), 1.0)
-        
+        if True:
+            # Scharffer Gummel scheme
+            B_tol = 1e-10   
+            self.Br_f = np.where( np.abs(self.dVr_f) > B_tol, self.dVr_f / ( np.exp(self.dVr_f) - 1.0 + 1e-12), 1.0)
+            self.Br_b = np.where( np.abs(self.dVr_b) > B_tol, self.dVr_b / ( np.exp(self.dVr_b) - 1.0 + 1e-12), 1.0)
+            self.Bz_f = np.where( np.abs(self.dVz_f) > B_tol, self.dVz_f / ( np.exp(self.dVz_f) - 1.0 + 1e-12), 1.0)
+            self.Bz_b = np.where( np.abs(self.dVz_b) > B_tol, self.dVz_b / ( np.exp(self.dVz_b) - 1.0 + 1e-12), 1.0)
+
+        if False:
+            # Slotboom scheme
+            self.Br_f = np.exp(-self.dVr_f/2.0)
+            self.Br_b = np.exp(-self.dVr_b/2.0)
+            self.Bz_f = np.exp(-self.dVz_f/2.0)
+            self.Bz_b = np.exp(-self.dVz_b/2.0)
+            
         # updating N, P matrix for continuity equation
         self.make_N_P_matrix(dt)
         
@@ -2181,7 +2191,7 @@ for each_z_geo_split_no in z_geo_split.keys():
     cpu_time_6 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':0 }}, after_info={'M':{'mat_no':10001}})     # BL
     cpu_time_7 = grid_solver.add_ohmic_contact(before_info={'S':{'mat_no':20, 'z_coord':-1}}, after_info={'M':{'mat_no':10002}})     # SL
     cpu_time_8 = grid_solver.set_semiconductor_parameters(op_temperature=25.0, tg_region={'S':{'mat_no':20}}, bl_mat_no=10001, sl_mat_no=10002, \
-                                                          doping=['n', 1e20], ct_doping=['n', [5e24, 1e20]])
+                                                          doping=['n', 1e20], ct_doping=['n', [1e25, 1e20]])
     cpu_time_9 = grid_solver.make_poisson_matrix()
 
     # FDM size
@@ -2579,5 +2589,5 @@ for each_z_geo_split_no in z_geo_split.keys():
                 fid_out.write( civ_output_format % tuple(each_cal_civ) )
             fid_out.close()
 
-
+                
       
