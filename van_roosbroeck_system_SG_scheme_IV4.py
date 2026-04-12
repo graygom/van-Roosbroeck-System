@@ -17,6 +17,23 @@ import matplotlib.pyplot as plt
 #
 # CLASS: GRID (finite difference method)
 #
+# MAT, MIS_MAT_no
+# R, R_MAT_name, R_MAT_mis, R_MAT_ep, R_MAT_no
+# Z, Z_REGION, Z_MAT_mis, Z_MAT_ep, Z_MAT_no
+# R_nodes, Z_nodes
+# R_nodes_len, Z_nodes_len, R_elmts_len, Z_elmts_len, RZ_nodes_len, RZ_elmts_len
+#
+# RZ_R, RZ_dR, RZ_Z, RZ_dZ
+# RZ_EP, RZ_MATno, CB_ref, CB_offset
+# RZ_MIS, RZ_MIS_index_min_max
+#
+#
+#
+#
+#
+#
+#
+#
 
 class GRID:
 
@@ -30,7 +47,8 @@ class GRID:
     
     # ===== constructor =====
     def __init__(self):
-        # poisson equation (1813) solution (for SOLVER class)
+        
+        # poisson equation (1813) solution (for SOLVER class, metal & semiconductor)
         self.V1 = []        # electric potential 1D (sparse matrix solution)
         self.V2 = []        # electric potential 2D
         self.E  = []        # electric field magnitude 2D
@@ -38,6 +56,8 @@ class GRID:
         self.Ez = []        # electric field z direction 2D
         self.EB = []        # external bias vector
         self.FC = []        # fixed charge density vector
+        
+        # poisson equation (1813) solution (for SOLVER class, metal only)
         self.V1_mim = []        # electric potential 1D (sparse matrix solution)
         self.V2_mim = []        # electric potential 2D
         self.E_mim  = []        # electric field magnitude 2D
@@ -51,12 +71,15 @@ class GRID:
         self.p1 = []        # hole density 1D (sparse matrix solution)
         self.n2 = []        # electron density 2D
         self.p2 = []        # hole density 2D
+        
         self.Jn = []        # electron current density magnitude 2D
         self.Jp = []        # hole current density magnitude 2D
+        
         self.Jn_r = []      # electron current density in r direction 2D
         self.Jn_z = []      # electron current density in z direction 2D
         self.Jp_r = []      # hole current density in r direction 2D
         self.Jp_z = []      # hole current density in z direction 2D
+        
 
     # ===== adding material parameters =====
     def add_material_parameters(self, mat_para_dictionary):
@@ -82,6 +105,7 @@ class GRID:
 
         # CPU time
         return end-start
+    
     
     # ===== setting unit cell R direction grid (angstrom) =====
     def set_unit_cell_R_grid(self, inward_thk_dr, outward_thk_dr):
@@ -213,6 +237,7 @@ class GRID:
 
         # CPU time
         return end-start
+    
 
     # ===== setting unit cell Z direction grid (angstrom) =====
     def set_unit_cell_Z_grid(self, z_on_thk_dz, z_offset):
@@ -259,6 +284,7 @@ class GRID:
 
         # CPU time
         return end-start
+    
 
     # ===== setting unit cell RZ 2D grid (angstrom) =====
     def set_unit_cell_RZ_grid(self):
@@ -278,6 +304,11 @@ class GRID:
         # sparse matrix size (used in array making)
         self.RZ_nodes_len = self.R_nodes_len * self.Z_nodes_len
         self.RZ_elmts_len = self.R_elmts_len * self.Z_elmts_len
+
+        # debugging
+        if True:
+            print('RZ nodes = [R %iea, Z %iea], total nodes = %iea' %  (self.R_nodes_len, self.Z_nodes_len, self.RZ_nodes_len))
+            print('RZ elememts = [R %iea, Z %iea], total elememts = %iea' % (self.R_elmts_len, self.Z_elmts_len, self.RZ_elmts_len))
         
         # 2D array R (angstrom -> m)
         self.RZ_R = np.zeros([self.R_nodes_len, self.Z_nodes_len])          # R nodes, Z nodes
@@ -322,6 +353,7 @@ class GRID:
 
         # CPU time
         return end-start
+    
 
     # ===== setting metal-insulator-semiconductor region =====
     def set_unit_cell_RZ_mis_region(self):
@@ -360,7 +392,7 @@ class GRID:
                 # get specific R, Z coordinates array in self.RZ_MATno array (elements) having the same each mat_no
                 r_index_array, z_index_array = np.where( self.RZ_MATno == each_mat_no )
 
-                # calculating R, Z index min. max.
+                # calculating R, Z index min. max. (RZ_MIS_index_min_max)
                 r_index_array_min, r_index_array_max = np.min( r_index_array ), np.max( r_index_array )
                 z_index_array_min, z_index_array_max = np.min( z_index_array ), np.max( z_index_array )
                 self.RZ_MIS_index_min_max[each_mat_mis][each_mat_no]['r'] = [r_index_array_min, r_index_array_max]
@@ -374,25 +406,46 @@ class GRID:
                     self.RZ_MIS[each_mat_mis][each_mat_no].add( ( r_index_array[each_point]+1, z_index_array[each_point]+0 ) )
                     self.RZ_MIS[each_mat_mis][each_mat_no].add( ( r_index_array[each_point]+1, z_index_array[each_point]+1 ) )
 
-        # set difference: I - edge points set (excluing RZ boundaries, neumann BC)
-        #for tg_mat_no in self.MIS_MAT_no['I']:
-        #    self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(edge_points_set)
+        # set difference: I - I (dielectrics, excluding double counting points)
+        for tg_mat_no in self.MIS_MAT_no['I']:
+            for diff_mat_no in self.MIS_MAT_no['I']:
+                if tg_mat_no != diff_mat_no:
+                    intersection_points = self.RZ_MIS['I'][tg_mat_no].intersection(self.RZ_MIS['I'][diff_mat_no])
+                    self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(self.RZ_MIS['I'][diff_mat_no])
+                    # debugging
+                    if True:
+                        if len(intersection_points) != 0:
+                            print('I (%i) intersect I (%i) = %iea  >> I (%i) net nodes = %iea' % \
+                                  (tg_mat_no, diff_mat_no, len(intersection_points), tg_mat_no, len(self.RZ_MIS['I'][tg_mat_no])))
         
         # set difference: I - M (electrodes, dirichlet BC)
         for tg_mat_no in self.MIS_MAT_no['I']:
             for diff_mat_no in self.MIS_MAT_no['M']:
+                intersection_points = self.RZ_MIS['I'][tg_mat_no].intersection(self.RZ_MIS['M'][diff_mat_no])
                 self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(self.RZ_MIS['M'][diff_mat_no])
+                # debugging
+                if True:
+                    if len(intersection_points) != 0:
+                        print('I (%i) intersect M (%i) = %iea  >> I (%i) net nodes = %iea' % \
+                              (tg_mat_no, diff_mat_no, len(intersection_points), tg_mat_no, len(self.RZ_MIS['I'][tg_mat_no])))
                 
         # set difference: I - S (semiconductors, Scharfetter-Gummel scheme, continuity equations)
         for tg_mat_no in self.MIS_MAT_no['I']:
             for diff_mat_no in self.MIS_MAT_no['S']:
+                intersection_points = self.RZ_MIS['I'][tg_mat_no].intersection(self.RZ_MIS['S'][diff_mat_no])
                 self.RZ_MIS['I'][tg_mat_no] = self.RZ_MIS['I'][tg_mat_no].difference(self.RZ_MIS['S'][diff_mat_no])
+                # debugging
+                if True:
+                    if len(intersection_points) != 0:
+                        print('I (%i) intersect S (%i) = %iea  >> I (%i) net nodes = %iea' % \
+                              (tg_mat_no, diff_mat_no, len(intersection_points), tg_mat_no, len(self.RZ_MIS['I'][tg_mat_no])))
         
         # CPU time
         end = time.time()
 
         # CPU time
         return end-start
+    
 
     # ===== adding ohmic contact =====
     def add_ohmic_contact(self, before_info, after_info):
@@ -414,7 +467,12 @@ class GRID:
         add_nodes = set()
         for each_r_node, each_z_node in list(self.RZ_MIS[before_mat_mis][before_mat_no]):
             if each_z_node == before_z_coord:
-                add_nodes.add( (each_r_node, each_z_node) )         # tuples
+                add_nodes.add( (each_r_node, each_z_node) )         # tuple, point
+
+        # debugging
+        if True:
+            print('%s (%i) to %s (%i) conversion nodes = %iea at Z = %i' % \
+                  (before_mat_mis, before_mat_no, after_mat_mis, after_mat_no, len(add_nodes), before_z_coord) )
 
         # ohmic contact -> metal
         self.RZ_MIS[before_mat_mis][before_mat_no] = self.RZ_MIS[before_mat_mis][before_mat_no].difference(add_nodes)
@@ -426,6 +484,7 @@ class GRID:
 
         # CPU time
         return end-start
+    
 
     # ===== setting semiconductor parameters =====
     def set_semiconductor_parameters(self, op_temperature, tg_region, bl_mat_no, sl_mat_no, doping, ct_doping):
@@ -439,125 +498,144 @@ class GRID:
         # semicondutor region (initialization)
         tg_mat_mis = list(tg_region.keys())[0]
         tg_mat_no  = tg_region[tg_mat_mis]['mat_no']
-        tg_points  = list(self.RZ_MIS[tg_mat_mis][tg_mat_no])               # semiconductor
+        tg_points  = list(self.RZ_MIS[tg_mat_mis][tg_mat_no])               # semiconductor (points)
         
-        bl_points  = list(self.RZ_MIS['M'][bl_mat_no])                      # ohmic contact
-        sl_points  = list(self.RZ_MIS['M'][sl_mat_no])                      # ohmic contact
-        bl_sl_points = bl_points +sl_points
+        bl_points  = list(self.RZ_MIS['M'][bl_mat_no])                      # BL ohmic contact (points)
+        sl_points  = list(self.RZ_MIS['M'][sl_mat_no])                      # SL ohmic contact (points)
+        bl_sl_points = bl_points + sl_points                                # BL + SL ohmic contact (points)
 
-        print('CH %iea BL %iea SL %iea' % (len(tg_points), len(bl_points), len(sl_points)))
+        # debugging
+        if True:
+            print('Operating temperature: %.2f Kelvin (%.1f Celsius), thermal voltage = %.3f eV' % \
+                  (self.TEMP, op_temperature, self.Vtm) )
+            print('S (%i) channel %iea, M (%i) BL %iea, M (%i) SL %iea' % \
+                  (tg_mat_no, len(tg_points), bl_mat_no, len(bl_points), sl_mat_no, len(sl_points)) )
 
-        # semicondutor region flag
-        self.CH_FLAG = np.zeros([self.R_nodes_len, self.Z_nodes_len])
-        self.CH_FLAG_serial = np.zeros(self.R_nodes_len*self.Z_nodes_len)
-        for each_tg_points in tg_points:
+        # semicondutor region (flag)
+        self.CH_FLAG = np.zeros([self.R_nodes_len, self.Z_nodes_len])           # 2D nodes
+        self.CH_FLAG_serial = np.zeros(self.R_nodes_len*self.Z_nodes_len)       # 1D serialization
+        for each_tg_points in tg_points:                                        # semiconductor region only
             each_r, each_z = each_tg_points
             index_r_z = self.R_nodes_len * (each_z+0) + (each_r+0)
             self.CH_FLAG[each_r, each_z] = 1.0
             self.CH_FLAG_serial[index_r_z] = 1.0
 
         # doping profile (initialization)
-        self.DP = 1e-4*np.ones(self.RZ_nodes_len)                               # 1D array
-        dopant_type = doping[0]                                             # 'n' or 'p'
-        dopant_density = doping[1]                                          # [m]^-3
-        for each_point in (tg_points + bl_sl_points):
+        self.DP = 1e-9 * np.ones(self.RZ_nodes_len)                             # 1D array
+        dopant_type, dopant_density = doping[0], doping[1]                      # 'n' or 'p', [m]^-3
+        
+        for each_point in (tg_points + bl_sl_points):                           # semiconductor + ohmic contacts
             r_node, z_node = each_point
-            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)          # 1D array index
+            index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)              # 1D array index
             if dopant_type =='n':
-                self.DP[index_r_z] = +dopant_density                        # w/ ionized polarity
+                self.DP[index_r_z] = +dopant_density                            # w/ ionized polarity
             elif dopant_type =='p':
-                self.DP[index_r_z] = -dopant_density                        # w/ ionized polarity
+                self.DP[index_r_z] = -dopant_density                            # w/ ionized polarity
             else:
                 print('set_semiconductor_parameters() > invalid dopant type')
 
-        # contact doping profile (initialization)
+        # ohmic contact doping profile (initialization)
         z_region_names = list(self.Z_stack.keys())
         
-        bl_doping_const_thk = self.Z_stack[z_region_names[0]]['thk']
-        bl_doping_const_dz = self.Z_stack[z_region_names[0]]['dz']
-        bl_doping_grad_thk = self.Z_stack[z_region_names[1]]['thk']
+        bl_doping_const_thk = self.Z_stack[z_region_names[0]]['thk']            # BL constant doping
+        bl_doping_const_dz = self.Z_stack[z_region_names[0]]['dz']        
+        bl_doping_grad_thk = self.Z_stack[z_region_names[1]]['thk']             # BL gradient doping
         bl_doping_grad_dz = self.Z_stack[z_region_names[1]]['dz']
         bl_doping_const_length = int(bl_doping_const_thk/bl_doping_const_dz)
         bl_doping_grad_length = int(bl_doping_const_length*0.5)
         
-        sl_doping_const_thk = self.Z_stack[z_region_names[-1]]['thk']
+        sl_doping_const_thk = self.Z_stack[z_region_names[-1]]['thk']           # SL constant doping
         sl_doping_const_dz = self.Z_stack[z_region_names[-1]]['dz']
-        sl_doping_grad_thk = self.Z_stack[z_region_names[-2]]['thk']
+        sl_doping_grad_thk = self.Z_stack[z_region_names[-2]]['thk']            # SL gradient doping
         sl_doping_grad_dz = self.Z_stack[z_region_names[-2]]['dz']
         sl_doping_const_length = int(sl_doping_const_thk/sl_doping_const_dz)
         sl_doping_grad_length = int(sl_doping_const_length*0.5)
             
-        cont_length = int( bl_doping_const_length * 1.5 )
-        grad_length = int( bl_doping_grad_length * 1.5 )
+        cont_length = int( bl_doping_const_length * 1.5 )                       # constant doping length
+        grad_length = int( bl_doping_grad_length * 1.5 )                        # gradient doping length
         
-        ct_dopant_type = ct_doping[0]                                                   # 'n' or 'p'
-        ct_dopant_density = ct_doping[1]                                                # [m]^-3
-        ct_dopant_density_grad = np.logspace(np.log10(ct_dopant_density[0]), np.log10(ct_dopant_density[1]), grad_length)
+        ct_dopant_type, ct_dopant_density = ct_doping[0], ct_doping[1]          # 'n' or 'p', [m]^-3
+        ct_dopant_density_grad = np.logspace( np.log10(ct_dopant_density[0]), \
+                                              np.log10(ct_dopant_density[1]), \
+                                              grad_length)
         
+        # making BL, SL doping profile
         for each_point in (bl_sl_points):
             r_node, z_node = each_point
             
             # dopant density (constant region)
             for z_node_add in range(cont_length):
-                #
+                
+                # BL contact
                 if (z_node == 0):
-                    index_r_z = self.R_nodes_len * (z_node+z_node_add) + (r_node+0)          # 1D array index
+                    index_r_z = self.R_nodes_len * (z_node+z_node_add) + (r_node+0)     # 1D array index
                     if ct_dopant_type =='n':
-                        self.DP[index_r_z]   = +ct_dopant_density[0]            # w/ ionized polarity
+                        self.DP[index_r_z]   = +ct_dopant_density[0]                    # w/ ionized polarity
                     elif ct_dopant_type =='p':
-                        self.DP[index_r_z]   = -ct_dopant_density[0]            # w/ ionized polarity
+                        self.DP[index_r_z]   = -ct_dopant_density[0]                    # w/ ionized polarity
                     else:
                         print('set_semiconductor_parameters() > invalid dopant type, contact')
-                #
+                        
+                # SL contact
                 if (z_node == (self.Z_nodes_len-1)):
-                    index_r_z = self.R_nodes_len * (z_node-z_node_add) + (r_node+0)          # 1D array index
+                    index_r_z = self.R_nodes_len * (z_node-z_node_add) + (r_node+0)     # 1D array index
                     if ct_dopant_type =='n':
-                        self.DP[index_r_z]   = +ct_dopant_density[0]            # w/ ionized polarity
+                        self.DP[index_r_z]   = +ct_dopant_density[0]                    # w/ ionized polarity
                     elif ct_dopant_type =='p':
-                        self.DP[index_r_z]   = -ct_dopant_density[0]            # w/ ionized polarity
+                        self.DP[index_r_z]   = -ct_dopant_density[0]                    # w/ ionized polarity
                     else:
                         print('set_semiconductor_parameters() > invalid dopant type, contact')
                         
             # dopant density gradiant region
             for z_node_add in range(grad_length):
-                #
+                
+                # BL contact
                 if (z_node == 0):
-                    index_r_z = self.R_nodes_len * (z_node+cont_length+z_node_add) + (r_node+0)          # 1D array index
+                    index_r_z = self.R_nodes_len * (z_node+cont_length+z_node_add) + (r_node+0)     # 1D array index
                     if ct_dopant_type =='n':
-                        self.DP[index_r_z]   = +ct_dopant_density_grad[z_node_add]            # w/ ionized polarity
+                        self.DP[index_r_z]   = +ct_dopant_density_grad[z_node_add]                  # w/ ionized polarity
                     elif ct_dopant_type =='p':
-                        self.DP[index_r_z]   = -ct_dopant_density_grad[z_node_add]            # w/ ionized polarity
+                        self.DP[index_r_z]   = -ct_dopant_density_grad[z_node_add]                  # w/ ionized polarity
                     else:
                         print('set_semiconductor_parameters() > invalid dopant type, contact')
-                #
+                        
+                # SL contact
                 if (z_node == (self.Z_nodes_len-1)):
-                    index_r_z = self.R_nodes_len * (z_node-cont_length-z_node_add) + (r_node+0)          # 1D array index
+                    index_r_z = self.R_nodes_len * (z_node-cont_length-z_node_add) + (r_node+0)     # 1D array index
                     if ct_dopant_type =='n':
-                        self.DP[index_r_z]   = +ct_dopant_density_grad[z_node_add]            # w/ ionized polarity
+                        self.DP[index_r_z]   = +ct_dopant_density_grad[z_node_add]                  # w/ ionized polarity
                     elif ct_dopant_type =='p':
-                        self.DP[index_r_z]   = -ct_dopant_density_grad[z_node_add]            # w/ ionized polarity
+                        self.DP[index_r_z]   = -ct_dopant_density_grad[z_node_add]                  # w/ ionized polarity
                     else:
                         print('set_semiconductor_parameters() > invalid dopant type, contact')
 
-        # 2D visualization (doping)
-        self.DP2 = self.DP.reshape(self.Z_nodes_len, self.R_nodes_len).T
-        self.RZ_MATno2 = np.where(self.RZ_MATno>=100, np.max(self.DP2), 1.0)
+        # 2D visualization (materials, doping profile)
+        self.DP2 = self.DP.reshape(self.Z_nodes_len, self.R_nodes_len).T                # 2D visualization
+        self.RZ_MATno2 = np.where(self.RZ_MATno>=100, np.max(self.DP2), 1.0)            # 2D visualization
+        self.RZ_MATno3 = np.where(self.RZ_MATno>=100, 0.0, self.RZ_MATno % 13)          # 2D visualization
 
-        z = range(self.Z_nodes_len)
-        r = range(self.R_nodes_len)
-        Z, R = np.meshgrid(z, r)
+        z = range(self.Z_nodes_len)             # for contour map
+        r = range(self.R_nodes_len)             # for contour map
+        Z, R = np.meshgrid(z, r)                # for contour map
 
-        fig, ax = plt.subplots(1, 1, figsize=(20,5)) 
-        ax0 = plt.imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
-        plt.contour(Z, R, self.DP2, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*2))
-        plt.title('dopant density w/ electrodes [m^-3]')
+        fig, ax = plt.subplots(2, 1, figsize=(15,7))
+        
+        ax0 = ax[0].imshow(self.RZ_MATno3, origin='lower', cmap='gray')
+        ax[0].set_title('material no % 13')
         plt.colorbar(ax0)
-        plt.savefig('doping.pdf')
+        
+        ax1 = ax[1].imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
+        ax[1].contour(Z, R, self.DP2, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*2))
+        ax[1].set_title('dopant density w/ electrodes [m^-3]')
+        plt.colorbar(ax1)
+        
+        plt.savefig('materials_doping_profile.pdf')
         plt.close()
 
         # intrinsic carrier density (initialization)
-        self.N_INT = np.ones(self.RZ_nodes_len)
-        for each_point in (tg_points+bl_sl_points):
+        self.N_INT = 1e-9 * np.ones(self.RZ_nodes_len)                              # 1D array
+        
+        for each_point in (tg_points + bl_sl_points):
             r_node, z_node = each_point
             index_r_z = self.R_nodes_len * (z_node+0) + (r_node+0)          
             #
@@ -566,22 +644,25 @@ class GRID:
         # free carrier density (initialization)
         self.n1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) + self.DP ) / 2      # 1D array
         self.p1  = ( np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) - self.DP ) / 2      # 1D array
+        
         self.n2 = self.n1.reshape(self.Z_nodes_len, self.R_nodes_len).T             # 2D array
         self.p2 = self.p1.reshape(self.Z_nodes_len, self.R_nodes_len).T             # 2D array
 
         # built-in potential (initialization)
-        self.Vbi = np.where( self.N_INT != 0.0, \
-                             self.Vtm * np.log( ( self.DP + np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) + 1.0 ) / ( 2.0*self.N_INT + 1.0 ) ), \
-                             0.0 )                                                  # 1D array
+        self.Vbi = self.Vtm * np.log( ( self.DP + \
+                                        np.sqrt( self.DP**2 + 4.0*self.N_INT**2 ) + 1.0 ) / ( 2.0*self.N_INT + 1.0 ) )      # 1D array
+
         self.Vbi2 = self.Vbi.reshape(self.Z_nodes_len, self.R_nodes_len).T          # 2D array
 
         # coefficient of continuity equation matrix (initialization)
         self.CM = {}
         
-        # STEP1: check neighbor points (semiconductor)
+        # STEP1: check neighbor points (semiconductor, excluding BL & SL contacts)
         for each_point in tg_points:
+            
             # selected point in semiconductor region
             each_r_node, each_z_node = each_point
+                                       
             # making key
             if each_point not in self.CM.keys():
                 self.CM[each_point] = {}
@@ -634,8 +715,9 @@ class GRID:
                 self.CM[each_point]['r_zp1']['dZ'] = dZ_r_zp1
                 self.CM[each_point]['r_zp1']['dZ2'] = dZ_r_zp1/2.0
   
-        # STEP2: updating neighbor points (semiconductor)
+        # STEP2: updating neighbor points (semiconductor, excluding BL & SL contacts)
         for each_point in tg_points:
+            
             # selected point in semiconductor region
             each_r_node, each_z_node = each_point
             each_point_neighbor = list(self.CM[each_point].keys())
@@ -702,6 +784,7 @@ class GRID:
         # CPU time
         return end-start
 
+
     # ===== making poisson matrix  =====
     def make_poisson_matrix(self):
         # CPU time
@@ -709,8 +792,9 @@ class GRID:
         
         # STEP0: making sparse matrix
         PM_shape = (self.RZ_nodes_len, self.RZ_nodes_len)
-        self.PM = sc.sparse.dok_matrix( PM_shape )
-        self.PM_mim = sc.sparse.dok_matrix( PM_shape )
+        
+        self.PM = sc.sparse.dok_matrix( PM_shape )                  # sparse matrix (MIS model)
+        self.PM_mim = sc.sparse.dok_matrix( PM_shape )              # sparse matrix (MIM model)
 
         # STEP1: dirichlet boundary conditions (electrodes)
         for each_mat_type in ['M', 'S']:
@@ -754,32 +838,39 @@ class GRID:
                         self.PM[index_r_z, index_r_zp1] += -1.0
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_rp1_z] += -1.0
+                        
                     elif (each_z == 0) and (each_r == (self.R_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_r_zp1] += -1.0
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_rm1_z] += -1.0
+                        
                     elif (each_z == 0):
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_r_zp1] += -1.0
+                        
                         # geometry factors in r direction
                         geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
                         geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
                         geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
                         geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        
                         # 2nd derivatives
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        
                         # electric permittivity z-1 (invalid) -> z+0
                         ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r-1,each_z+0])/2.0
                         ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                        
                         # elements
                         pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
                         pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        
                         # sparse matrix (poisson equation)
                         self.PM[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
                         self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
@@ -792,21 +883,25 @@ class GRID:
                         self.PM[index_r_z, index_r_zm1] += -1.0
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_rp1_z] += -1.0
+                        
                     elif (each_z == (self.Z_nodes_len-1)) and (each_r == (self.R_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_r_zm1] += -1.0
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_rm1_z] += -1.0
+                        
                     elif (each_z == (self.Z_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_r_zm1] += -1.0
+                        
                         # geometry factors in r direction
                         geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
                         geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
                         geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
                         geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        
                         # 2nd derivatives
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
@@ -833,32 +928,39 @@ class GRID:
                         self.PM_mim[index_r_z, index_r_zp1] += -1.0
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_rp1_z] += -1.0
+                        
                     elif (each_z == 0) and (each_r == (self.R_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_r_zp1] += -1.0
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_rm1_z] += -1.0
+                        
                     elif (each_z == 0):
                         # sparse matrix (neumann conditions)
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_r_zp1] += -1.0
+                        
                         # geometry factors in r direction
                         geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
                         geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
                         geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
                         geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        
                         # 2nd derivatives
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        
                         # electric permittivity z-1 (invalid) -> z+0
                         ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r-1,each_z+0])/2.0
                         ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                        
                         # elements
                         pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
                         pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        
                         # sparse matrix (poisson equation)
                         self.PM_mim[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
                         self.PM_mim[index_r_z, index_rm1_z] += -pm_rm1_z
@@ -871,32 +973,39 @@ class GRID:
                         self.PM_mim[index_r_z, index_r_zm1] += -1.0
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_rp1_z] += -1.0
+                        
                     elif (each_z == (self.Z_nodes_len-1)) and (each_r == (self.R_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_r_zm1] += -1.0
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_rm1_z] += -1.0
+                        
                     elif (each_z == (self.Z_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_r_zm1] += -1.0
+                        
                         # geometry factors in r direction
                         geometry_effect_rm1_z  = (self.RZ_R[each_r+0,each_z+0]-(self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0)
                         geometry_effect_rm1_z /=  self.RZ_R[each_r+0,each_z+0]
                         geometry_effect_rp1_z  = (self.RZ_R[each_r+0,each_z+0]+(self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])/2.0)
                         geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
+                        
                         # 2nd derivatives
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
                         geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r+0,each_z+0])
                         geometry_effect_rp1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
+                        
                         # electric permittivity: z+0 (invalid) -> z-1
                         ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z-1])/2.0
                         ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
+                        
                         # elements
                         pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
                         pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
+                        
                         #  sparse matrix (poisson equation)
                         self.PM_mim[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z
                         self.PM_mim[index_r_z, index_rm1_z] += -pm_rm1_z
@@ -922,12 +1031,14 @@ class GRID:
                         self.PM[index_r_z, index_rp1_z] += -1.0
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_r_zp1] += -1.0
+                        
                     elif (each_r == 0) and (each_z == (self.Z_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_rp1_z] += -1.0
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_r_zm1] += -1.0
+                        
                     elif (each_r == 0):
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
@@ -958,12 +1069,14 @@ class GRID:
                         self.PM[index_r_z, index_rm1_z] += -1.0
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_r_zp1] += -1.0
+                        
                     elif (each_r == (self.R_nodes_len-1)) and (each_z == (self.Z_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_rm1_z] += -1.0
                         self.PM[index_r_z, index_r_z  ] += +1.0
                         self.PM[index_r_z, index_r_zm1] += -1.0
+                        
                     elif (each_r == (self.R_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM[index_r_z, index_r_z  ] += +1.0
@@ -997,12 +1110,14 @@ class GRID:
                         self.PM_mim[index_r_z, index_rp1_z] += -1.0
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_r_zp1] += -1.0
+                        
                     elif (each_r == 0) and (each_z == (self.Z_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_rp1_z] += -1.0
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_r_zm1] += -1.0
+                        
                     elif (each_r == 0):
                         # sparse matrix (neumann conditions)
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
@@ -1033,12 +1148,14 @@ class GRID:
                         self.PM_mim[index_r_z, index_rm1_z] += -1.0
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_r_zp1] += -1.0
+                        
                     elif (each_r == (self.R_nodes_len-1)) and (each_z == (self.Z_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_rm1_z] += -1.0
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
                         self.PM_mim[index_r_z, index_r_zm1] += -1.0
+                        
                     elif (each_r == (self.R_nodes_len-1)):
                         # sparse matrix (neumann conditions)
                         self.PM_mim[index_r_z, index_r_z  ] += +1.0
@@ -1082,6 +1199,7 @@ class GRID:
                     geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
                     geometry_effect_r_zm1  = 1.0
                     geometry_effect_r_zp1  = 1.0
+                    
                     # 2nd derivatives
                     geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
                     geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
@@ -1091,16 +1209,19 @@ class GRID:
                     geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
                     geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
                     geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                    
                     # electric permittivity
                     ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z+0])/2.0
                     ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z+0])/2.0
                     ep_r_avg_zm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
                     ep_r_avg_zp1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                    
                     # elements
                     pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
                     pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
                     pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
                     pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
+                    
                     # sparse matrix (poisson equation)
                     self.PM[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z + pm_r_zm1 + pm_r_zp1
                     self.PM[index_r_z, index_rm1_z] += -pm_rm1_z
@@ -1118,6 +1239,7 @@ class GRID:
                     geometry_effect_rp1_z /=  self.RZ_R[each_r+0,each_z+0]
                     geometry_effect_r_zm1  = 1.0
                     geometry_effect_r_zp1  = 1.0
+                    
                     # 2nd derivatives
                     geometry_effect_rm1_z /= (self.RZ_R[each_r+0,each_z+0]-self.RZ_R[each_r-1,each_z+0])
                     geometry_effect_rm1_z /= (self.RZ_R[each_r+1,each_z+0]-self.RZ_R[each_r-1,each_z+0])/2.0
@@ -1127,16 +1249,19 @@ class GRID:
                     geometry_effect_r_zm1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
                     geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z+0])
                     geometry_effect_r_zp1 /= (self.RZ_Z[each_r+0,each_z+1]-self.RZ_Z[each_r+0,each_z-1])/2.0
+                    
                     # electric permittivity
                     ep_z_avg_rm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r-1,each_z+0])/2.0
                     ep_z_avg_rp1 = (self.RZ_EP[each_r+0,each_z-1]+self.RZ_EP[each_r+0,each_z+0])/2.0
                     ep_r_avg_zm1 = (self.RZ_EP[each_r-1,each_z-1]+self.RZ_EP[each_r+0,each_z-1])/2.0
                     ep_r_avg_zp1 = (self.RZ_EP[each_r-1,each_z+0]+self.RZ_EP[each_r+0,each_z+0])/2.0
+                    
                     # elements
                     pm_rm1_z = geometry_effect_rm1_z * ep_z_avg_rm1
                     pm_rp1_z = geometry_effect_rp1_z * ep_z_avg_rp1
                     pm_r_zm1 = geometry_effect_r_zm1 * ep_r_avg_zm1
                     pm_r_zp1 = geometry_effect_r_zp1 * ep_r_avg_zp1
+                    
                     # sparse matrix (poisson equation)
                     self.PM_mim[index_r_z, index_r_z  ] += +pm_rm1_z + pm_rp1_z + pm_r_zm1 + pm_r_zp1
                     self.PM_mim[index_r_z, index_rm1_z] += -pm_rm1_z
@@ -1165,6 +1290,7 @@ class GRID:
 
         # CPU time
         return end-start
+    
 
     # ===== making continuity matrix  =====
     def make_continuity_matrix(self):
@@ -1212,6 +1338,7 @@ class SOLVER(GRID):
             # sweep material type
             for each_mat_mis in ['M']:
                 for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                    
                     # check points
                     for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
                         # 1D serialization index
@@ -1235,6 +1362,7 @@ class SOLVER(GRID):
             # sweep material type
             for each_mat_mis in ['M', 'S']:
                 for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                    
                     # check points
                     for each_r, each_z in self.RZ_MIS[each_mat_mis][each_mat_no]:
                         # 1D serialization index
@@ -1255,6 +1383,7 @@ class SOLVER(GRID):
 
         # CPU time
         return end-start
+    
 
     # ===== making fixed charge vector  =====
     def make_fixed_charge_vector(self, fixed_charge_density, model_type):
@@ -1267,6 +1396,7 @@ class SOLVER(GRID):
             # sweep material type
             for each_mat_mis in ['I', 'S']:
                 for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                    
                     # check material number
                     if each_mat_no in fixed_charge_density.keys():
                         # check points
@@ -1285,6 +1415,7 @@ class SOLVER(GRID):
             # sweep material type
             for each_mat_mis in ['I']:
                 for each_mat_no in self.RZ_MIS[each_mat_mis].keys():
+                    
                     # check material number
                     if each_mat_no in fixed_charge_density.keys():
                         # check points
@@ -1302,6 +1433,7 @@ class SOLVER(GRID):
 
         # CPU time
         return end-start
+    
 
     # ===== solving poisson equation  =====
     def solve_poisson_equation(self, model_type):
@@ -1337,6 +1469,7 @@ class SOLVER(GRID):
 
         # CPU time
         return end-start
+    
 
     # ===== calculate surface induced charge on channel (MIM model only)  =====
     def cal_channel_induced_charge(self, mat_no_ch, mat_no_tox):
@@ -1351,8 +1484,10 @@ class SOLVER(GRID):
         for each_z in range(1, self.Z_elmts_len):
             # sweep R
             for each_r in range(1, self.R_elmts_len-1):
+                
                 # finding channel - TOX interface
                 if (self.RZ_MATno[each_r-1, each_z] == mat_no_ch) and (self.RZ_MATno[each_r, each_z] == mat_no_tox):
+                    
                     # geometry
                     r    = self.RZ_R[each_r, each_z]
                     z    = self.RZ_Z[each_r, each_z]
@@ -1381,6 +1516,7 @@ class SOLVER(GRID):
         Q = np.sum(Q_profile)
         
         return [Q, Q_profile, mat_no_profile, Z_profile, E_profile, E_Q_profile]
+    
 
     # ===== calculate tunneling probability (MIM model only)  =====
     def cal_tunneling_probability(self, mat_no_tox, meff):
@@ -1397,6 +1533,7 @@ class SOLVER(GRID):
         
         # sweep Z
         for each_z in range(1, self.Z_elmts_len):
+            
             # Z direction position
             Z_profile.append( self.RZ_Z[0, each_z] )
             
@@ -1441,6 +1578,7 @@ class SOLVER(GRID):
             # WKB approximation: case 1
             WKB_approx = 0.0
             WKB_length = 0
+            
             # sweep R
             for each_r in range(1, self.R_elmts_len-1):
                 # finding TOX
@@ -1451,7 +1589,8 @@ class SOLVER(GRID):
                         dr = ( self.RZ_R[each_r+1, each_z] - self.RZ_R[each_r, each_z] )
                         WKB_length += dr
                         # conduction band electron Tunneling only
-                        WKB_approx += np.sqrt( 2.0 * (self.me * meff) * CB_offset[each_r, each_z] * self.q ) * dr  
+                        WKB_approx += np.sqrt( 2.0 * (self.me * meff) * CB_offset[each_r, each_z] * self.q ) * dr
+                        
             #
             WKB_approx = np.exp( -2.0 / self.hbar * WKB_approx)
             WKB_profile.append( WKB_approx )
@@ -1459,6 +1598,7 @@ class SOLVER(GRID):
             
         #
         return [WKB_profile, WKB_profile2, WKB_length_profile, WKB_length_profile2, mat_no_profile, Z_profile]
+
 
     # ===== calculate thermal velocity (MIM model only)  =====
     def cal_thermal_velocity(self):
@@ -1470,6 +1610,7 @@ class SOLVER(GRID):
 
         # return
         return thermal_velocity
+
 
     # ===== charge trap nitride trap model (MIM model only)  =====
     def cal_ctn_trap_model_1d(self, dt, tox_meff, mat_no_ch, mat_no_tox, mat_no_ctn, ctn_peak_pos, cnt_ccs_array, ctn_density_array):
@@ -1551,6 +1692,7 @@ class SOLVER(GRID):
                     ax[1].plot(r_ctn, f_ctn_density(r_ctn), 'o-')
                     ax[1].grid(ls=':')
                     plt.show()
+                    
             if True:
                 if (each_z == 1):
                     fig, ax = plt.subplots(1, 2, figsize=(12, 6))
@@ -1560,6 +1702,7 @@ class SOLVER(GRID):
                     ax[1].plot(r_ctn, np.abs(self.FC_mim2[r_ctn_index, each_z]), 'o-')
                     ax[1].grid(ls=':')
                     #print(each_z, induced_Q_density, tunneling_prob)
+                    
                 elif (each_z == int(self.Z_elmts_len/2.0)):
                     ax[0].plot(r_ctn, ctn_trap_flux, 'o-')
                     ax[0].grid(ls=':')
@@ -1578,6 +1721,7 @@ class SOLVER(GRID):
 
         # MIM model
         if model_type == 'MIM':
+            
             # geometry
             R = self.RZ_R[60:-1,:-1]
             Z = self.RZ_Z[60:-1,:-1]
@@ -1605,6 +1749,7 @@ class SOLVER(GRID):
         if model_type == 'MIS':
             CB_offset = self.CB_offset[:,:] - self.V2[:-1,:-1]
 
+
     # ===== making N P matrix  =====
     def make_N_P_matrix(self, dt):
         # CPU time
@@ -1622,6 +1767,7 @@ class SOLVER(GRID):
             
             # sweep neighbor points around selected target point
             for neighbor_point in self.CM[each_point].keys():
+                
                 # selected neighbor point
                 neighbor_index = self.CM[each_point][neighbor_point]['index']
                 n_CM_coeff = self.CM[each_point][neighbor_point]['n_CM_coeff']
@@ -1672,6 +1818,7 @@ class SOLVER(GRID):
 
         # CPU time
         return end-start
+    
 
     # ===== solving continuity equation  =====
     def solve_continuity_equation(self, dt):
@@ -1714,6 +1861,7 @@ class SOLVER(GRID):
         # CPU time
         return end-start
 
+
     # ===== calculating BL SL current  =====
     def cal_bl_sl_current(self, bl_mat_no, sl_mat_no):
         # CPU time
@@ -1727,10 +1875,13 @@ class SOLVER(GRID):
         
         # check every BL ohmic contact points
         for each_r_index, each_z_index in bl_points:
+            
             # calculate perimeter
             perimeter = 2.0 * np.pi * self.RZ_R[each_r_index, each_z_index]
+            
             # calculate area
             area = perimeter * self.RZ_dR[each_r_index, each_z_index]
+            
             # calculate Jn_bl, Jp_bl
             Jn_bl  = +self.q * self.MAT['SI']['mu_n'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index]
             Jn_bl *= ( self.Bz_f[each_r_index, each_z_index+0] * self.n2[each_r_index, each_z_index+1] - \
@@ -1738,16 +1889,20 @@ class SOLVER(GRID):
             Jp_bl  = -self.q * self.MAT['SI']['mu_p'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index]
             Jp_bl *= ( self.Bz_b[each_r_index, each_z_index+0] * self.p2[each_r_index, each_z_index+1] - \
                        self.Bz_f[each_r_index, each_z_index+0] * self.p2[each_r_index, each_z_index+0] )
+            
             # calculate I_bl, I_bl
             In_bl += area * Jn_bl
             Ip_bl += area * Jp_bl
             
         # check every SL ohmic contact points
         for each_r_index, each_z_index in sl_points:
+            
             # calculate perimeter
             perimeter = 2.0 * np.pi * self.RZ_R[each_r_index, each_z_index]
+            
             # calculate area
             area = perimeter * self.RZ_dR[each_r_index, each_z_index-1]
+            
             # calculate Jn_sl, Jp_sl
             Jn_sl  = +self.q * self.MAT['SI']['mu_n'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index-1]
             Jn_sl *= ( self.Bz_f[each_r_index, each_z_index-1] * self.n2[each_r_index, each_z_index+0] - \
@@ -1755,12 +1910,14 @@ class SOLVER(GRID):
             Jp_sl  = -self.q * self.MAT['SI']['mu_p'] * self.Vtm / self.RZ_dZ[each_r_index, each_z_index-1]
             Jp_sl *= ( self.Bz_b[each_r_index, each_z_index-1] * self.p2[each_r_index, each_z_index+0] - \
                        self.Bz_f[each_r_index, each_z_index-1] * self.p2[each_r_index, each_z_index-1] )
+            
             # calculate I_bl, I_bl
             In_sl += area * Jn_sl
             Ip_sl += area * Jp_sl
             
         # return
         return [In_bl, Ip_bl, In_sl, Ip_sl]
+    
 
     # ===== save solutions (TXT file) =====
     def save_SG_scheme_solutions_in_txt(self, output_filename):
@@ -1836,6 +1993,7 @@ class SOLVER(GRID):
 
         # CPU time
         return end-start
+    
 
     # ===== save solutions (PDF file) =====
     def save_SG_scheme_solutions_in_pdf(self, output_filename):
@@ -1849,21 +2007,25 @@ class SOLVER(GRID):
             
         # === CASE 0
         fig, ax = plt.subplots(5, 1, figsize=(8,14))
+        
         # doping profile
         ax0 = ax[0].imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
         ax[0].contour(Z, R, self.DP2, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*2))
         ax[0].set_title('dopant density w/ electrodes [m^-3]')
         plt.colorbar(ax0)
+        
         # electric potential
         ax1 = ax[1].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
         ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*2))
         ax[1].set_title('electric potential [V]')
         plt.colorbar(ax1)
+        
         # electric field
         ax2 = ax[2].imshow(self.E, origin='lower', cmap='coolwarm')
         ax[2].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.01, levels=np.linspace(0.0, 50e8, 51*4))
         ax[2].set_title('electric field [V/m]')
         plt.colorbar(ax2)
+        
         # electron density
         ax3 = ax[3].imshow(np.log10(np.abs(self.n2)+1e-1), origin='lower', cmap='coolwarm')
         ax[3].contour(Z, R, np.log10(np.abs(self.n2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
@@ -1871,6 +2033,7 @@ class SOLVER(GRID):
         #ax[3].contour(Z, R, self.n2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
         ax[3].set_title('LOG10(electron density) @channel [m^-3]')
         plt.colorbar(ax3)
+        
         # hole density
         ax4 = ax[4].imshow(np.log10(np.abs(self.p2)+1e-1), origin='lower', cmap='coolwarm')
         ax[4].contour(Z, R, np.log10(np.abs(self.p2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
@@ -1878,6 +2041,7 @@ class SOLVER(GRID):
         #ax[4].contour(Z, R, self.p2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
         ax[4].set_title('LOG10(hole density) @channel [m^-3]')
         plt.colorbar(ax4)
+        
         #
         plt.savefig(output_filename+'_0.pdf')
         #
@@ -1885,21 +2049,25 @@ class SOLVER(GRID):
             
         # === CASE 1
         fig, ax = plt.subplots(5, 1, figsize=(8,14))
+        
         # doping profile
         ax0 = ax[0].imshow((self.RZ_MATno2 + self.DP2[:-1,:-1]), origin='lower', cmap='coolwarm')
         ax[0].contour(Z, R, self.DP2, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*2))
         ax[0].set_title('dopant density w/ electrodes [m^-3]')
         plt.colorbar(ax0)
+        
         # electric potential
         ax1 = ax[1].imshow(self.V2, origin='lower', cmap='coolwarm')     # 'RdBu'
         ax[1].contour(Z, R, self.V2, colors='k', linewidths=0.01, levels=np.linspace(-30.0, +30.0, 61*2))
         ax[1].set_title('electric potential  [V]')
         plt.colorbar(ax1)
+        
         #
         ax2 = ax[2].imshow(self.E, origin='lower', cmap='coolwarm')
         ax[2].contour(Z[:-1,:-1], R[:-1,:-1], self.E, colors='k', linewidths=0.01, levels=np.linspace(0.0, 50e8, 51*4))
         ax[2].set_title('electric field [V/m]')
         plt.colorbar(ax2)
+        
         #
         #ax3 = ax[3].imshow(np.log10(np.abs(self.n2)+1e-1), origin='lower', cmap='coolwarm')
         #ax[3].contour(Z, R, np.log10(np.abs(self.n2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
@@ -1907,6 +2075,7 @@ class SOLVER(GRID):
         ax[3].contour(Z, R, self.n2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
         ax[3].set_title('electron density @channel [m^-3]')
         plt.colorbar(ax3)
+        
         #
         #ax4 = ax[4].imshow(np.log10(np.abs(self.p2)+1e-1), origin='lower', cmap='coolwarm')
         #ax[4].contour(Z, R, np.log10(np.abs(self.p2)+1e-1), levels=np.linspace(-1.0, 27.0, 29*1), colors='k', linewidths=0.01)
@@ -1914,6 +2083,7 @@ class SOLVER(GRID):
         ax[4].contour(Z, R, self.p2+1e-1, colors='k', linewidths=0.01, levels=np.logspace(-1.0, 27.0, 29*1))
         ax[4].set_title('hole density @channel [m^-3]')
         plt.colorbar(ax4)
+        
         #
         plt.savefig(output_filename+'_1.pdf')
         #
@@ -1934,11 +2104,9 @@ class SOLVER(GRID):
 # z geometry split (USER INPUT)
 z_geo_split = {}
 z_geo_split[0] = [5, 100.0, 30.0, 320.0, 30.0, 100.0]   # 200_380_580
-z_geo_split[1] = [5, 105.0, 30.0, 310.0, 30.0, 105.0]   # 210_370_580
-z_geo_split[2] = [5, 110.0, 30.0, 300.0, 30.0, 110.0]   # 220_360_580
-z_geo_split[3] = [5, 100.0, 30.0, 330.0, 30.0, 100.0]   # 200_390_590
-z_geo_split[4] = [5, 105.0, 30.0, 320.0, 30.0, 105.0]   # 210_380_590
-z_geo_split[5] = [5, 110.0, 30.0, 310.0, 30.0, 110.0]   # 220_370_590
+z_geo_split[1] = [5, 95.0,  30.0, 330.0, 30.0, 95.0 ]   # 190_390_580
+z_geo_split[2] = [5, 90.0,  30.0, 340.0, 30.0, 90.0 ]   # 180_400_580
+z_geo_split[3] = [5, 105.0, 30.0, 310.0, 30.0, 105.0]   # 210_370_580
 
 # z geometry split
 for each_z_geo_split_no in z_geo_split.keys():
@@ -2018,8 +2186,8 @@ for each_z_geo_split_no in z_geo_split.keys():
 
     # FDM size
     print('FDM size')
-    print('  R nodes = %i, Z nodes = %i' % (grid_solver.R_nodes_len, grid_solver.Z_nodes_len))
-    print('  RZ nodes = %i (sparse matrix size)' % (grid_solver.RZ_nodes_len))
+    print('  R nodes = %iea, Z nodes = %iea' % (grid_solver.R_nodes_len, grid_solver.Z_nodes_len))
+    print('  RZ nodes = %iea (sparse matrix size)' % (grid_solver.RZ_nodes_len))
 
     # CPU time check
     print('CPU time check list')
@@ -2225,13 +2393,13 @@ for each_z_geo_split_no in z_geo_split.keys():
             sl_range            = np.linspace(info_sl[0],            info_sl[1],            range_div)
 
             # Gummel iteration (GI) parameter
-            gi_w_v = 0.991                      # GI convergence control parameter (>0.99)
-            gi_w_np = 0.991                     # GI convergence control parameter (>0.99)
+            gi_w_v = 0.992                      # GI convergence control parameter (>0.99)
+            gi_w_np = 0.992                     # GI convergence control parameter (>0.99)
             gi_error_v = 6e-5                   # GI convergence control parameter  
             gi_error_n = 1e23                   # GI convergence control parameter (<1e23)
 
             # timeline
-            timeline_full = [1e-8]              # GI convergence control parameter (current LKG level < 1E-12A as dt > 1e-8 sec)
+            timeline_full = [1e-5]              # GI convergence control parameter (current LKG level < 1E-12A as dt > 1e-8 sec)
 
             # log
             cal_log = []
@@ -2348,7 +2516,7 @@ for each_z_geo_split_no in z_geo_split.keys():
                         # log
                         output_format = '%i,%i,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%i,%i,%.4f,%.4f,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e,%.2e'
                         output_value  = [sweep_loop_no, each_div_index, \
-                                         sel_wl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], \
+                                         sel_wl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], sel_adj_wl_sl_range[each_div_index], \
                                          unsel_wl_range[each_div_index], bl_range[each_div_index], sl_range[each_div_index], \
                                          gi_no, each_time_index, gi_w_v, gi_w_np, each_time, dt, \
                                          error_v, error_n, error_p,\
@@ -2369,7 +2537,7 @@ for each_z_geo_split_no in z_geo_split.keys():
                 # output filename
                 output_filename = '%iWL_SG_scheme_Gummel_iter_ZSPLIT%i_LOOP%i_%i_%.3f_%.3f_%.3f_%.3f_%.3f_%.3f_elapsed_time_%i_%.3e_dt_%.3e_w_%.4f_%.4f_%i' % \
                                   (wl_ea, each_z_geo_split_no, sweep_loop_no, each_div_index, \
-                                   sel_wl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], \
+                                   sel_wl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], sel_adj_wl_sl_range[each_div_index], \
                                    unsel_wl_range[each_div_index], bl_range[each_div_index], sl_range[each_div_index], \
                                    each_time_index, each_time, dt, gi_w_v, gi_w_np, gi_no)
 
@@ -2389,8 +2557,8 @@ for each_z_geo_split_no in z_geo_split.keys():
                     print('Gummel iter = %iea, %.3f sec' % (gi_no, cpu_time_31))
 
                 # CIV output (collecting data)
-                cal_civ.append([wl_ea, each_z_geo_split_no, sweep_loop_no, gi_no, \
-                                sel_wl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], unsel_wl_range[each_div_index], \
+                cal_civ.append([identifier, wl_ea, each_z_geo_split_no, sweep_loop_no, gi_no, \
+                                sel_wl_range[each_div_index], sel_adj_wl_bl_range[each_div_index], sel_adj_wl_sl_range[each_div_index], unsel_wl_range[each_div_index], \
                                 bl_range[each_div_index], sl_range[each_div_index], \
                                 In_bl, Ip_bl, In_sl, Ip_sl])
 
@@ -2405,8 +2573,8 @@ for each_z_geo_split_no in z_geo_split.keys():
 
             # CIV output (console output)
             fid_out = open(output_filename + '_civ.txt', 'w')
-            fid_out.write('WLs,ZSPLIT,LOOP_C,GUMMEL_ITER_NO,SEL_WL_V,SEL_ADJ_WL_BL_V,SEL_ADJ_WL_SL_V,UNSEL_WL_V,BL_V,SL_V,In_BL,Ip_BL,In_SL,Ip_SL' + '\n')
-            civ_output_format = '%i,%i,%i,%i,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3e,%.3e,%.3e,%.3e' + '\n'
+            fid_out.write('IDENTIFIER,WLs,ZSPLIT,LOOP_C,GUMMEL_ITER_NO,SEL_WL_V,SEL_ADJ_WL_BL_V,SEL_ADJ_WL_SL_V,UNSEL_WL_V,BL_V,SL_V,In_BL,Ip_BL,In_SL,Ip_SL' + '\n')
+            civ_output_format = '%s,%i,%i,%i,%i,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3e,%.3e,%.3e,%.3e' + '\n'
             for each_cal_civ in cal_civ:
                 fid_out.write( civ_output_format % tuple(each_cal_civ) )
             fid_out.close()
